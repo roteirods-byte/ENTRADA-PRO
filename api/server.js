@@ -1,5 +1,7 @@
 "use strict";
 
+const DEFAULT_SOURCE = process.env.PRICE_SOURCE || "MARK_PRICE";
+
 const fs = require("fs");
 const path = require("path");
 const express = require("express");

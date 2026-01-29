@@ -1,13 +1,37 @@
 <!doctype html>
-<html><head>
-<meta charset="utf-8"/>
-<title>ENTRADA-PRO | TOP10</title>
-<link rel="stylesheet" href="/shared.css"/>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AUTOTRADER PRO - TOP 10</title>
+  <link rel="stylesheet" href="/shared.css"/>
 </head>
 <body>
-<h1>ENTRADA-PRO | TOP10</h1>
-<div id="meta">carregando...</div>
-<div id="table"></div>
-<script src="/shared.js"></script>
-<script>loadTop10().catch(e=>document.getElementById("meta").textContent="ERRO: "+e.message);</script>
-</body></html>
+  <div class="wrap">
+    <div class="card">
+      <div class="top">
+        <div>
+          <h1>AUTOTRADER PRO - TOP 10</h1>
+          <p class="sub">Painel único (PRO) — dados em <b>/api/pro</b>. Atualização automática a cada 5 minutos.</p>
+          <div class="badges">
+            <span class="badge" id="upd">Atualizado (BRT): —</span>
+            <span class="badge" id="cnt">Itens: —</span>
+            <span class="badge" id="src">Fonte: —</span>
+          </div>
+        </div>
+        <div class="btns">
+          <a class="btn" href="/full.html">PAINEL</a>
+          <a class="btn" href="/top10.html">TOP 10</a>
+          <a class="btn" href="/audit.html">AUDITORIA</a>
+        </div>
+      </div>
+      <div class="hr"></div>
+      <div id="err" class="err"></div>
+      <div id="table"></div>
+      <div class="foot">Filtro único: <b>GANHO % ≥ 3</b> (senão <b>NÃO ENTRAR</b>). PRAZO é calculado (não é fixo).</div>
+    </div>
+  </div>
+  <script src="/shared.js"></script>
+  <script>boot("top10");</script>
+</body>
+</html>

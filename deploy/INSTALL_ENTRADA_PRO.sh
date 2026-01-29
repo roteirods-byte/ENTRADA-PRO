@@ -54,3 +54,46 @@ echo "OK. Agora ajuste o Nginx para apontar /api/ para 127.0.0.1:8090 e root /va
 echo "URLs esperadas:"
 echo "  /api/health  /api/version  /api/pro  /api/top10  /api/audit"
 echo "  /full.html /top10.html /audit.html"
+
+echo "=== (8) NGINX: instalar snippet + injetar include no server_name paineljorge.duckdns.org ==="
+sudo mkdir -p /etc/nginx/snippets
+sudo cp -f "$(pwd)/deploy/nginx/entrada-pro.location.conf" /etc/nginx/snippets/entrada-pro.location.conf
+
+# achar arquivo real do painel (sites-enabled) e inserir include
+TARGET_NGX=""
+for f in /etc/nginx/sites-enabled/*; do
+  if sudo grep -q "server_name\s\+paineljorge\.duckdns\.org" "$f"; then
+    TARGET_NGX="$f"
+    break
+  fi
+done
+
+if [ -z "$TARGET_NGX" ]; then
+  echo "ERRO: não achei server_name paineljorge.duckdns.org em /etc/nginx/sites-enabled/"
+  echo "Abra /etc/nginx/sites-enabled e confira onde está o server_name."
+  exit 1
+fi
+
+# inserir include apenas se não existir
+if ! sudo grep -q "entrada-pro.location.conf" "$TARGET_NGX"; then
+  sudo python3 - <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text(encoding="utf-8", errors="replace")
+# insere include logo depois da linha server_name paineljorge.duckdns.org;
+pat = r'(server_name\s+paineljorge\.duckdns\.org\s*;[^\n]*\n)'
+if not re.search(pat, s):
+    raise SystemExit("server_name não encontrado no arquivo alvo")
+ins = r'\\1    include /etc/nginx/snippets/entrada-pro.location.conf;\\n'
+s2 = re.sub(pat, ins, s, count=1)
+p.write_text(s2, encoding="utf-8")
+print("OK: include inserido em", p)
+PY
+  "$TARGET_NGX"
+else
+  echo "OK: include já existe em $TARGET_NGX"
+fi
+
+sudo nginx -t
+sudo systemctl reload nginx
+echo "OK: Nginx recarregado"
