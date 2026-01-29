@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=roteiro_ds
 WorkingDirectory=/home/roteiro_ds/ENTRADA-PRO/api
+Environment=NODE_ENV=production
 Environment=PORT=8090
 Environment=DATA_DIR=/home/roteiro_ds/ENTRADA-PRO/data
-Environment=SITE_DIR=/home/roteiro_ds/ENTRADA-PRO/site
 ExecStart=/usr/bin/node /home/roteiro_ds/ENTRADA-PRO/api/server.js
 Restart=always
 RestartSec=2

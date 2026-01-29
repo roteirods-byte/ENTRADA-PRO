@@ -5,3 +5,7 @@ table{border-collapse:collapse; width:100%;}
 th,td{border:1px solid #ddd; padding:6px 8px; font-size:12px;}
 th{background:#f5f5f5; position:sticky; top:0;}
 pre{background:#111; color:#eee; padding:12px; overflow:auto;}
+
+/* ENTRADA-PRO visual */
+h1{color:#ff8c00;}
+.nav a, .nav button{color:#ff8c00;}

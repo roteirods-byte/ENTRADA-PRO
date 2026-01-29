@@ -33,9 +33,37 @@ function healthPayload() {
   };
 }
 
+
+function readVersion() {
+  const candidates = [
+    path.join(__dirname, "..", "VERSION"),
+    path.join(__dirname, "VERSION"),
+    path.join(process.cwd(), "VERSION"),
+  ];
+  for (const fp of candidates) {
+    try {
+      if (fs.existsSync(fp)) {
+        const v = String(fs.readFileSync(fp, "utf-8")).trim();
+        if (v) return v;
+      }
+    } catch (e) {}
+  }
+  // fallback: package.json
+  try {
+    const pj = require("./package.json");
+    return pj && pj.version ? String(pj.version) : "0.0.0";
+  } catch (e) {
+    return "0.0.0";
+  }
+}
+
 // compat
 app.get("/health", (req,res)=>res.json(healthPayload()));
 app.get("/api/health", (req,res)=>res.json(healthPayload()));
+
+
+app.get("/version", (req,res)=>res.json({ok:true, service:"entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString()}));
+app.get("/api/version", (req,res)=>res.json({ok:true, service:"entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString()}));
 
 app.get("/api/pro", (req, res) => {
   const fp = path.join(DATA_DIR, "pro.json");
