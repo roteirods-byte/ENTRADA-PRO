@@ -1,0 +1,12 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8"/>
+<title>ENTRADA-PRO | AUDIT</title>
+<link rel="stylesheet" href="/shared.css"/>
+</head>
+<body>
+<h1>ENTRADA-PRO | AUDIT</h1>
+<pre id="audit">carregando...</pre>
+<script src="/shared.js"></script>
+<script>loadAudit().catch(e=>document.getElementById("audit").textContent="ERRO: "+e.message);</script>
+</body></html>

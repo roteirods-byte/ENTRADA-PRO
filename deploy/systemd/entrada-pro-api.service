@@ -1,0 +1,17 @@
+[Unit]
+Description=ENTRADA-PRO API (Node/Express)
+After=network.target
+
+[Service]
+Type=simple
+User=roteiro_ds
+WorkingDirectory=/home/roteiro_ds/ENTRADA-PRO/api
+Environment=PORT=8090
+Environment=DATA_DIR=/home/roteiro_ds/ENTRADA-PRO/data
+Environment=SITE_DIR=/home/roteiro_ds/ENTRADA-PRO/site
+ExecStart=/usr/bin/node /home/roteiro_ds/ENTRADA-PRO/api/server.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
