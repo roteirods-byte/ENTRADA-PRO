@@ -67,42 +67,8 @@ app.get("/api/health", (req,res)=>res.json(healthPayload()));
 app.get("/version", (req,res)=>res.json({ok:true, service:"entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString()}));
 app.get("/api/version", (req,res)=>res.json({ok:true, service:"entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString()}));
 
-app.get("/api/pro", (req, res) => {
-  const fp = path.join(DATA_DIR, "pro.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"pro.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
 
-app.get("/api/top10", (req, res) => {
-  const fp = path.join(DATA_DIR, "top10.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"top10.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
-
-app.get("/api/audit", (req, res) => {
-  const fp = path.join(DATA_DIR, "audit.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"audit.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
-
-
-
-// -----------------------------------------------------------------------------
-// COMPATIBILIDADE DE ROTAS (NGINX)
-// -----------------------------------------------------------------------------
-// Em alguns NGINX, a regra fica assim:
-//   location ^~ /api/ { proxy_pass http://127.0.0.1:8095/; }
-// Quando existe a BARRA FINAL no proxy_pass, o NGINX remove o prefixo /api/
-// e envia para o Node como:
-//   /api/pro    -> /pro
-//   /api/top10  -> /top10
-//   /api/audit  -> /audit
-// O /api/health funcionava porque já existia /health.
-// Abaixo criamos aliases para evitar 404 e deixar o painel estável.
-
+// compat (Nginx pode remover /api/ dependendo do proxy_pass)
 app.get("/pro", (req, res) => {
   const fp = path.join(DATA_DIR, "pro.json");
   const data = safeJsonRead(fp);
@@ -118,6 +84,27 @@ app.get("/top10", (req, res) => {
 });
 
 app.get("/audit", (req, res) => {
+  const fp = path.join(DATA_DIR, "audit.json");
+  const data = safeJsonRead(fp);
+  if (!data) return res.status(404).json({ ok:false, error:"audit.json_not_found", data_dir: DATA_DIR });
+  return res.json(data);
+});
+
+app.get("/api/pro", (req, res) => {
+  const fp = path.join(DATA_DIR, "pro.json");
+  const data = safeJsonRead(fp);
+  if (!data) return res.status(404).json({ ok:false, error:"pro.json_not_found", data_dir: DATA_DIR });
+  return res.json(data);
+});
+
+app.get("/api/top10", (req, res) => {
+  const fp = path.join(DATA_DIR, "top10.json");
+  const data = safeJsonRead(fp);
+  if (!data) return res.status(404).json({ ok:false, error:"top10.json_not_found", data_dir: DATA_DIR });
+  return res.json(data);
+});
+
+app.get("/api/audit", (req, res) => {
   const fp = path.join(DATA_DIR, "audit.json");
   const data = safeJsonRead(fp);
   if (!data) return res.status(404).json({ ok:false, error:"audit.json_not_found", data_dir: DATA_DIR });
