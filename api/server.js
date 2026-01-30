@@ -88,6 +88,42 @@ app.get("/api/audit", (req, res) => {
   return res.json(data);
 });
 
+
+
+// -----------------------------------------------------------------------------
+// COMPATIBILIDADE DE ROTAS (NGINX)
+// -----------------------------------------------------------------------------
+// Em alguns NGINX, a regra fica assim:
+//   location ^~ /api/ { proxy_pass http://127.0.0.1:8095/; }
+// Quando existe a BARRA FINAL no proxy_pass, o NGINX remove o prefixo /api/
+// e envia para o Node como:
+//   /api/pro    -> /pro
+//   /api/top10  -> /top10
+//   /api/audit  -> /audit
+// O /api/health funcionava porque já existia /health.
+// Abaixo criamos aliases para evitar 404 e deixar o painel estável.
+
+app.get("/pro", (req, res) => {
+  const fp = path.join(DATA_DIR, "pro.json");
+  const data = safeJsonRead(fp);
+  if (!data) return res.status(404).json({ ok:false, error:"pro.json_not_found", data_dir: DATA_DIR });
+  return res.json(data);
+});
+
+app.get("/top10", (req, res) => {
+  const fp = path.join(DATA_DIR, "top10.json");
+  const data = safeJsonRead(fp);
+  if (!data) return res.status(404).json({ ok:false, error:"top10.json_not_found", data_dir: DATA_DIR });
+  return res.json(data);
+});
+
+app.get("/audit", (req, res) => {
+  const fp = path.join(DATA_DIR, "audit.json");
+  const data = safeJsonRead(fp);
+  if (!data) return res.status(404).json({ ok:false, error:"audit.json_not_found", data_dir: DATA_DIR });
+  return res.json(data);
+});
+
 // static site (opcional) se quiser servir pelo node
 const SITE_DIR = process.env.SITE_DIR || path.join(__dirname, "..", "site");
 app.use("/", express.static(SITE_DIR));
