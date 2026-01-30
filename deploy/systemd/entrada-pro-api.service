@@ -8,7 +8,7 @@ User=roteiro_ds
 WorkingDirectory=/home/roteiro_ds/ENTRADA-PRO/api
 Environment=NODE_ENV=production
 Environment=PORT=8090
-Environment=DATA_DIR=/home/roteiro_ds/ENTRADA-PRO/data
+Environment=DATA_DIR=/home/roteiro_ds/AUTOTRADER-PRO/data
 ExecStart=/usr/bin/node /home/roteiro_ds/ENTRADA-PRO/api/server.js
 Restart=always
 RestartSec=2

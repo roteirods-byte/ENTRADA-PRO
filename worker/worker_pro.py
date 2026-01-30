@@ -9,6 +9,8 @@ from engine.io import atomic_write_json
 from engine.exchanges import binance_mark_last, bybit_mark_last, binance_klines
 from engine.compute import build_signal, Signal
 
+SCHEMA_VERSION = "r2"
+
 def par_to_symbol_usdt(par: str) -> str:
     # Futures symbols are usually like BTCUSDT
     p = par.strip().upper().replace("USDT","")
@@ -79,6 +81,7 @@ def main() -> int:
 
     pro_obj={
         "ok": True,
+        "schema_version": SCHEMA_VERSION,
         "service": "entrada-pro-worker",
         "updated_utc": now_utc_iso(),
         "updated_brt": now_brt_str(),
@@ -87,25 +90,17 @@ def main() -> int:
     }
     top_obj={
         "ok": True,
+        "schema_version": SCHEMA_VERSION,
         "service": "entrada-pro-worker",
         "updated_utc": now_utc_iso(),
         "updated_brt": now_brt_str(),
         "count": len(top10),
         "items": top10
     }
-    audit_obj={
-        "ok": True,
-        "updated_utc": now_utc_iso(),
-        "updated_brt": now_brt_str(),
-        "counts": {"pro": len(rows), "top10": len(top10)},
-        "rules": {"gain_min_pct": GAIN_MIN_PCT, "price_base": "MARK_PRICE"},
-        "errors": errors[:50],
-    }
 
     data_dir = Path(DATA_DIR)
     atomic_write_json(data_dir/"pro.json", pro_obj)
     atomic_write_json(data_dir/"top10.json", top_obj)
-    atomic_write_json(data_dir/"audit.json", audit_obj)
 
     return 0
 

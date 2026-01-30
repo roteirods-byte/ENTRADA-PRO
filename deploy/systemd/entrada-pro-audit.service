@@ -1,9 +1,11 @@
 [Unit]
-Description=ENTRADA-PRO Auditor Gate (bloqueia se falhar)
+Description=ENTRADA-PRO Auditor (gera audit.json + gate)
 After=network.target
 
 [Service]
 Type=oneshot
 User=roteiro_ds
 WorkingDirectory=/home/roteiro_ds/ENTRADA-PRO
-ExecStart=/bin/bash /home/roteiro_ds/ENTRADA-PRO/scripts/audit_gate.sh http://127.0.0.1:8090
+Environment=DATA_DIR=/home/roteiro_ds/AUTOTRADER-PRO/data
+ExecStart=/bin/bash /home/roteiro_ds/ENTRADA-PRO/scripts/run_audit.sh
+ExecStartPost=/bin/bash /home/roteiro_ds/ENTRADA-PRO/scripts/audit_gate.sh http://127.0.0.1:8090

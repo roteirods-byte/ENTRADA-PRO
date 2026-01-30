@@ -1,0 +1,26 @@
+PATCH_ENTRADA_PRO_FIX1 (R2)
+
+Mudanças (mínimas e seguras):
+1) Padroniza DATA_DIR para /home/roteiro_ds/AUTOTRADER-PRO/data em:
+   - deploy/systemd/entrada-pro-api.service
+   - deploy/systemd/entrada-pro-worker.service
+   - deploy/systemd/entrada-pro-audit.service
+
+2) Worker: service vira Type=oneshot (sem Restart=always) e roda via timer (5 min).
+
+3) Auditoria: audit.json é gerado por audit/run_audit.py (via scripts/run_audit.sh) e depois o gate valida endpoints.
+
+4) Gate: remove hardcode de 77; usa tamanho de config/coins.json como expected_count.
+
+5) Worker: adiciona schema_version="r2" em pro.json/top10.json e não sobrescreve audit.json.
+
+6) Instalador: corrige caminho do snippet nginx, copia worker.timer e habilita worker.timer.
+
+Arquivos alterados:
+- deploy/systemd/entrada-pro-api.service
+- deploy/systemd/entrada-pro-worker.service
+- deploy/systemd/entrada-pro-audit.service
+- scripts/audit_gate.sh
+- audit/run_audit.py
+- worker/worker_pro.py
+- deploy/INSTALL_ENTRADA_PRO.sh

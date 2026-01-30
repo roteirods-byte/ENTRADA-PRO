@@ -14,8 +14,8 @@ REPO_DIR="/home/roteiro_ds/ENTRADA-PRO"
 SITE_DIR="/var/www/entrada-pro"
 
 echo "=== 1) Preparar pastas ==="
-sudo mkdir -p "$REPO_DIR" "$REPO_DIR/data" "$SITE_DIR"
-sudo chown -R roteiro_ds:roteiro_ds "$REPO_DIR" "$SITE_DIR"
+sudo mkdir -p "$REPO_DIR" "$REPO_DIR/data" "$SITE_DIR" "/home/roteiro_ds/AUTOTRADER-PRO/data"
+sudo chown -R roteiro_ds:roteiro_ds "$REPO_DIR" "$SITE_DIR" "/home/roteiro_ds/AUTOTRADER-PRO/data"
 
 echo "=== 2) Copiar arquivos do repo (rodar dentro da pasta do repo clonado) ==="
 # Este script deve ser executado dentro da pasta do repo (ENTRADA-PRO) já clonada.
@@ -43,7 +43,7 @@ sudo cp -f "$REPO_DIR/deploy/systemd/entrada-pro-worker.service" /etc/systemd/sy
 sudo cp -f "$REPO_DIR/deploy/systemd/entrada-pro-audit.service" /etc/systemd/system/
 sudo cp -f "$REPO_DIR/deploy/systemd/entrada-pro-audit.timer" /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now entrada-pro-worker.service
+sudo systemctl enable --now entrada-pro-worker.timer
 sudo systemctl enable --now entrada-pro-api.service
 sudo systemctl enable --now entrada-pro-audit.timer
 
@@ -57,7 +57,7 @@ echo "  /full.html /top10.html /audit.html"
 
 echo "=== (8) NGINX: instalar snippet + injetar include no server_name paineljorge.duckdns.org ==="
 sudo mkdir -p /etc/nginx/snippets
-sudo cp -f "$(pwd)/deploy/nginx/entrada-pro.location.conf" /etc/nginx/snippets/entrada-pro.location.conf
+sudo cp -f "$REPO_DIR/deploy/nginx/entrada-pro.location.conf" /etc/nginx/snippets/entrada-pro.location.conf
 
 # achar arquivo real do painel (sites-enabled) e inserir include
 TARGET_NGX=""
