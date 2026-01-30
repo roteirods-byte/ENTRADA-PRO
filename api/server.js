@@ -19,7 +19,12 @@ function safeJsonRead(fp) {
     const raw = fs.readFileSync(fp, "utf-8");
     return JSON.parse(raw);
   } catch (e) {
-    return { ok: false, error: "invalid_json", file: fp, details: String(e && e.message ? e.message : e) };
+    return {
+      ok: false,
+      error: "invalid_json",
+      file: fp,
+      details: String(e && e.message ? e.message : e),
+    };
   }
 }
 
@@ -31,10 +36,12 @@ function healthPayload() {
     service: "entrada-pro-api",
     now_utc: now,
     data_dir: DATA_DIR,
-    audit: audit && audit.ok === true ? { ok: true, updated_brt: audit.updated_brt, counts: audit.counts } : { ok: false }
+    audit:
+      audit && audit.ok === true
+        ? { ok: true, updated_brt: audit.updated_brt, counts: audit.counts }
+        : { ok: false },
   };
 }
-
 
 function readVersion() {
   const candidates = [
@@ -59,57 +66,35 @@ function readVersion() {
   }
 }
 
-// compat
-app.get("/health", (req,res)=>res.json(healthPayload()));
-app.get("/api/health", (req,res)=>res.json(healthPayload()));
-
-
-app.get("/version", (req,res)=>res.json({ok:true, service:"entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString()}));
-app.get("/api/version", (req,res)=>res.json({ok:true, service:"entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString()}));
-
-
-// compat (Nginx pode remover /api/ dependendo do proxy_pass)
-app.get("/pro", (req, res) => {
-  const fp = path.join(DATA_DIR, "pro.json");
+function serveJsonFile(res, filename, notFoundError) {
+  const fp = path.join(DATA_DIR, filename);
   const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"pro.json_not_found", data_dir: DATA_DIR });
+  if (!data) return res.status(404).json({ ok: false, error: notFoundError, data_dir: DATA_DIR });
   return res.json(data);
-});
+}
 
-app.get("/top10", (req, res) => {
-  const fp = path.join(DATA_DIR, "top10.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"top10.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
+// compat (nginx pode reescrever /api/* -> /* dependendo do proxy_pass)
+app.get("/health", (req, res) => res.json(healthPayload()));
+app.get("/api/health", (req, res) => res.json(healthPayload()));
 
-app.get("/audit", (req, res) => {
-  const fp = path.join(DATA_DIR, "audit.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"audit.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
+app.get("/version", (req, res) =>
+  res.json({ ok: true, service: "entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString() })
+);
+app.get("/api/version", (req, res) =>
+  res.json({ ok: true, service: "entrada-pro-api", version: readVersion(), now_utc: new Date().toISOString() })
+);
 
-app.get("/api/pro", (req, res) => {
-  const fp = path.join(DATA_DIR, "pro.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"pro.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
+// PRO
+app.get("/api/pro", (req, res) => serveJsonFile(res, "pro.json", "pro.json_not_found"));
+app.get("/pro", (req, res) => serveJsonFile(res, "pro.json", "pro.json_not_found"));
 
-app.get("/api/top10", (req, res) => {
-  const fp = path.join(DATA_DIR, "top10.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"top10.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
+// TOP10
+app.get("/api/top10", (req, res) => serveJsonFile(res, "top10.json", "top10.json_not_found"));
+app.get("/top10", (req, res) => serveJsonFile(res, "top10.json", "top10.json_not_found"));
 
-app.get("/api/audit", (req, res) => {
-  const fp = path.join(DATA_DIR, "audit.json");
-  const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok:false, error:"audit.json_not_found", data_dir: DATA_DIR });
-  return res.json(data);
-});
+// AUDIT
+app.get("/api/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json_not_found"));
+app.get("/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json_not_found"));
 
 // static site (opcional) se quiser servir pelo node
 const SITE_DIR = process.env.SITE_DIR || path.join(__dirname, "..", "site");
