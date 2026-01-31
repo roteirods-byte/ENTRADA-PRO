@@ -92,6 +92,10 @@ app.get("/pro", (req, res) => serveJsonFile(res, "pro.json", "pro.json_not_found
 app.get("/api/top10", (req, res) => serveJsonFile(res, "top10.json", "top10.json_not_found"));
 app.get("/top10", (req, res) => serveJsonFile(res, "top10.json", "top10.json_not_found"));
 
+// COMPAT (frontend antigo)
+app.get("/api/pro/full", (req, res) => serveJsonFile(res, "pro.json", "pro.json_not_found"));
+app.get("/api/pro/top10", (req, res) => serveJsonFile(res, "top10.json", "top10.json_not_found"));
+
 // AUDIT
 app.get("/api/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json_not_found"));
 app.get("/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json_not_found"));
