@@ -1,36 +1,31 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>AUTOTRADER PRO - AUDITORIA</title>
+  <title>AUDIT - ENTRADA PRO</title>
   <link rel="stylesheet" href="/assets/style.css"/>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <div class="top">
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="dot"></div>
         <div>
-          <h1>AUTOTRADER PRO - AUDITORIA</h1>
-          <p class="sub">Painel único (PRO) — dados em <b>/api/pro</b>. Atualização automática a cada 5 minutos.</p>
-          <div class="badges">
-            <span class="badge" id="upd">Atualizado (BRT): —</span>
-            <span class="badge" id="cnt">Itens: —</span>
-            <span class="badge" id="src">Fonte: —</span>
-          </div>
-        </div>
-        <div class="btns">
-          <a class="btn" href="/full.html">PAINEL</a>
-          <a class="btn" href="/top10.html">TOP 10</a>
-          <a class="btn" href="/audit.html">AUDITORIA</a>
+          <h1>AUDIT • ENTRADA PRO</h1>
+          <div class="badge" id="meta">auditoria</div>
         </div>
       </div>
-      <div class="hr"></div>
-      <div id="err" class="err"></div>
-      <div id="table"></div>
-      <div class="foot">Filtro único: <b>GANHO % ≥ 3</b> (senão <b>NÃO ENTRAR</b>). PRAZO é calculado (não é fixo).</div>
+      <div class="pill"><a href="/full.html">FULL</a> • <a href="/top10.html">TOP10</a></div>
+    </div>
+
+    <div class="card">
+      <div class="h2">SAÍDA DA AUDITORIA</div>
+      <div class="offline" id="offline" style="display:none"></div>
+      <pre id="audit_json" style="white-space:pre-wrap;word-break:break-word;"></pre>
     </div>
   </div>
+
   <script src="/assets/common.js"></script>
   <script>boot("audit");</script>
 </body>
