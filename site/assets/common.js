@@ -1,3 +1,5 @@
+console.log("COMMON.JS BUILD: 2026-01-31 07:50");
+
 async function fetchJson(url){
   const r = await fetch(url, {cache:"no-store"});
   const ct = r.headers.get("content-type") || "";
@@ -13,7 +15,7 @@ function esc(s){
 const COLS_FULL = [
   ["PAR","PAR"],
   ["SIDE","SIDE"],
-  ["ENTRADA","PREÇO"],
+  ["ENTRADA","ENTRADA"],
   ["ALVO","ALVO"],
   ["GANHO_PCT","GANHO %"],
   ["ASSERT_PCT","ASSERT %"],
@@ -61,7 +63,7 @@ function renderTable(el, items, cols){
         return `<td class="${cls}">${esc(fmtNum(v,2))}</td>`;
       }
       if(k==="ENTRADA" || k==="ALVO"){
-        return `<td>${esc(fmtNum(v,6))}</td>`;
+        return `<td>${esc(fmtNum(v,3))}</td>`;
       }
       return `<td>${esc(v)}</td>`;
     }).join("") + "</tr>";
@@ -80,7 +82,7 @@ function setBadges(meta){
 
 async function loadFull(){
   const tableEl = document.getElementById("table");
-  const j = await fetchJson("/api/pro");
+  const j = await fetchJson("/api/pro");      // ✅ CORRETO
   if(!j.ok) throw new Error(j.error || "API retornou ok=false");
   setBadges(j);
   renderTable(tableEl, j.items, COLS_FULL);
@@ -88,7 +90,7 @@ async function loadFull(){
 
 async function loadTop10(){
   const tableEl = document.getElementById("table");
-  const j = await fetchJson("/api/top10");
+  const j = await fetchJson("/api/top10");    // ✅ CORRETO
   if(!j.ok) throw new Error(j.error || "API retornou ok=false");
   setBadges(j);
   renderTable(tableEl, j.items, COLS_TOP10);
@@ -99,12 +101,7 @@ async function loadAudit(){
   const j = await fetchJson("/api/audit");
   if(!j.ok) throw new Error(j.error || "Auditoria retornou ok=false");
   setBadges(j);
-  // auditoria é lista de checks
-  const cols = [
-    ["name","CHECK"],
-    ["ok","OK?"],
-    ["detail","DETALHE"],
-  ];
+  const cols = [["name","CHECK"],["ok","OK?"],["detail","DETALHE"]];
   renderTable(tableEl, j.checks || [], cols);
 }
 
