@@ -106,7 +106,12 @@ app.get("/api/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json
 app.get("/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json_not_found"));
 
 // static site (opcional) se quiser servir pelo node
-const SITE_DIR = process.env.SITE_DIR || path.join(__dirname, "..", "site");
+const SITE_DIR = process.env.SITE_DIR || (() => {
+  const dist = path.join(__dirname, "..", "dist");
+  const site = path.join(__dirname, "..", "site");
+  try { if (fs.existsSync(dist)) return dist; } catch(e) {}
+  return site;
+})();
 app.use("/", express.static(SITE_DIR));
 
 app.listen(PORT, () => {
