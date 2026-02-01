@@ -7,7 +7,7 @@ Type=oneshot
 User=roteiro_ds
 WorkingDirectory=/home/roteiro_ds/ENTRADA-PRO/worker
 Environment=PYTHONUNBUFFERED=1
-Environment=DATA_DIR=/home/roteiro_ds/ENTRADA-PRO/data
+Environment=DATA_DIR=/home/roteiro_ds/AUTOTRADER-PRO/data
 ExecStart=/usr/bin/python3 /home/roteiro_ds/ENTRADA-PRO/worker/worker_pro.py
 
 [Install]

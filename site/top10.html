@@ -13,7 +13,7 @@
         <div class="dot"></div>
         <div>
           <h1>TOP10 • ENTRADA PRO</h1>
-          <div class="badge" id="upd">carregando…</div>
+          <div class="badge" id="meta">carregando…</div>
         </div>
       </div>
       <div class="pill"><a href="/full.html">FULL</a> • <a href="/audit.html">AUDIT</a></div>
@@ -21,14 +21,20 @@
 
     <div class="card">
       <div class="h2">TOP 10</div>
+      <div class="offline" id="offline" style="display:none"></div>
 
-      <div class="badges">
-        <span class="badge" id="cnt">Itens: -</span>
-        <span class="badge" id="src">Fonte: -</span>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>PAR</th><th>SIDE</th><th>MODO</th><th>ENTRADA</th><th>ALVO</th><th>GANHO</th><th>ASSERT</th><th>PRAZO</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
       </div>
 
-      <div class="offline" id="err" style="display:block"></div>
-      <div id="table"></div>
+      <div class="cards" id="cards"></div>
     </div>
   </div>
 

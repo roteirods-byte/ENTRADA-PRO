@@ -1,6 +1,6 @@
-// BUILD FIX: common.js v2C (2026-02-01) - compat HTML antigo/novo + mostra erro + AUDIT não trava
-// - Requer no HTML: div#table, div#err, badges #upd #cnt #src (existindo ou não, não quebra)
-// - FULL: /api/pro | TOP10: /api/top10 | AUDIT: /api/audit (ok:false não deve deixar painel vazio)
+// BUILD FIX: common.js v3 (2026-02-01)
+// - Compatível com o HTML atual (FULL/TOP10 usa tbody#rows; AUDIT usa pre#audit_json)
+// - Se a API responder ok=false, mostra motivo (sem tratar como "API caiu")
 
 async function fetchJson(url, timeoutMs = 8000) {
   const ctrl = new AbortController();
@@ -8,9 +8,13 @@ async function fetchJson(url, timeoutMs = 8000) {
   try {
     const r = await fetch(url, { cache: "no-store", signal: ctrl.signal });
     const ct = (r.headers.get("content-type") || "").toLowerCase();
-    if (!r.ok) throw new Error(`HTTP_${r.status}`);
-    if (!ct.includes("application/json")) throw new Error("NAO_JSON");
-    return await r.json();
+    if (!ct.includes("application/json")) {
+      throw new Error(r.ok ? "NAO_JSON" : `HTTP_${r.status}`);
+    }
+    const j = await r.json();
+    // Mesmo se HTTP != 200, se veio JSON devolvemos para a UI mostrar o erro.
+    if (!r.ok && j && typeof j === "object" && !("_http" in j)) j._http = r.status;
+    return j;
   } finally {
     clearTimeout(t);
   }
@@ -48,7 +52,6 @@ function pctClass(v){
   return n >= 0 ? "pct-pos" : "pct-neg";
 }
 
-// Colunas completas
 const COLS_FULL = [
   ["PAR","PAR"],
   ["SIDE","SIDE"],
@@ -67,13 +70,44 @@ const COLS_FULL = [
 
 const COLS_TOP10 = COLS_FULL;
 
-function renderTable(el, items, cols){
+function getErrEl(){
+  return document.getElementById("err") || document.getElementById("offline");
+}
+function showErr(msg){
+  const el = getErrEl();
   if(!el) return;
+  el.textContent = msg;
+  // HTML atual usa display via classe; então só garante que aparece.
+  el.style.display = "block";
+}
+function hideErr(){
+  const el = getErrEl();
+  if(!el) return;
+  el.textContent = "";
+  el.style.display = "none";
+}
+
+function setBadges(meta){
+  const upd = document.getElementById("upd");
+  const cnt = document.getElementById("cnt");
+  const src = document.getElementById("src");
+  const badge = document.getElementById("meta");
+
+  const updText = meta && meta.updated_brt ? `Atualizado (BRT): ${meta.updated_brt}` : "Atualizado (BRT): -";
+  const cntText = `Itens: ${meta && meta.count !== undefined ? meta.count : 0}`;
+  const srcText = meta && meta.source ? `Fonte: ${meta.source}` : "Fonte: -";
+
+  if (upd) upd.textContent = updText;
+  if (cnt) cnt.textContent = cntText;
+  if (src) src.textContent = srcText;
+  if (badge) badge.textContent = `${updText} • ${cntText} • ${srcText}`;
+}
+
+function renderRows(tbody, items, cols){
   if(!items || !items.length){
-    el.innerHTML = "<p class='err'>Sem dados (API/Worker).</p>";
+    tbody.innerHTML = "";
     return;
   }
-  const thead = "<tr>" + cols.map(([k,label])=>`<th>${esc(label)}</th>`).join("") + "</tr>";
   const rows = items.map(it=>{
     return "<tr>" + cols.map(([k])=>{
       const v = it[k];
@@ -82,91 +116,71 @@ function renderTable(el, items, cols){
         const cls = pctClass(v);
         return `<td class="${cls}">${esc(fmtPct(v))}</td>`;
       }
-      if(k === "ENTRADA" || k === "ALVO"){
-        return `<td>${esc(fmtPrice(v))}</td>`;
-      }
+      if(k === "ENTRADA" || k === "ALVO") return `<td>${esc(fmtPrice(v))}</td>`;
       return `<td>${esc(fmtTxt(v))}</td>`;
     }).join("") + "</tr>";
   }).join("");
-
-  el.innerHTML = `<div class="tableWrap"><table><thead>${thead}</thead><tbody>${rows}</tbody></table></div>`;
+  tbody.innerHTML = rows;
 }
 
-function setBadges(meta){
-  const upd = document.getElementById("upd") || document.getElementById("meta");
-  const cnt = document.getElementById("cnt");
-  const src = document.getElementById("src");
-  if(upd) upd.textContent = meta.updated_brt ? `Atualizado (BRT): ${meta.updated_brt}` : (meta.updated_utc ? `Atualizado: ${meta.updated_utc}` : "Atualizado: -");
-  if(cnt) cnt.textContent = `Itens: ${meta.count ?? 0}`;
-  if(src) src.textContent = meta.source ? `Fonte: ${meta.source}` : "";
-}
-
-function showErr(msg){
-  const errEl = document.getElementById("err") || document.getElementById("offline");
-  if(errEl){
-    errEl.style.display = "block";
-    errEl.textContent = msg;
-  }
-}
-function hideErr(){
-  const errEl = document.getElementById("err") || document.getElementById("offline");
-  if(errEl){
-    errEl.style.display = "none";
-    errEl.textContent = "";
-  }
-}
-
-// FULL usa /api/pro
 async function loadFull(){
-  const tableEl = document.getElementById("table") || document.getElementById("rows");
+  const tbody = document.getElementById("rows");
   const j = await fetchJson("/api/pro");
-  setBadges(j);
-  if(!j.ok){
-    showErr("API /api/pro: " + (j.error || "ok=false"));
-    if(tableEl) tableEl.innerHTML = "";
+  setBadges(j || {});
+
+  if(!j || !j.ok){
+    const dir = j && j.data_dir ? j.data_dir : "-";
+    const err = j && j.error ? j.error : "sem_dados";
+    showErr(`Sem dados: ${err} (DATA_DIR: ${dir})`);
+    if (tbody) tbody.innerHTML = "";
     return;
   }
+
   hideErr();
-  renderTable(tableEl, j.items || [], COLS_FULL);
+  if (tbody) renderRows(tbody, j.items || [], COLS_FULL);
 }
 
-// TOP10 usa /api/top10
 async function loadTop10(){
-  const tableEl = document.getElementById("table") || document.getElementById("rows");
+  const tbody = document.getElementById("rows");
   const j = await fetchJson("/api/top10");
-  setBadges(j);
-  if(!j.ok){
-    showErr("API /api/top10: " + (j.error || "ok=false"));
-    if(tableEl) tableEl.innerHTML = "";
+  setBadges(j || {});
+
+  if(!j || !j.ok){
+    const dir = j && j.data_dir ? j.data_dir : "-";
+    const err = j && j.error ? j.error : "sem_dados";
+    showErr(`Sem dados: ${err} (DATA_DIR: ${dir})`);
+    if (tbody) tbody.innerHTML = "";
     return;
   }
+
   hideErr();
-  renderTable(tableEl, j.items || [], COLS_TOP10);
+  if (tbody) renderRows(tbody, j.items || [], COLS_TOP10);
 }
 
-// AUDIT: se ok=false (audit.json não existe), não trava: mostra msg
 async function loadAudit(){
-  const tableEl = document.getElementById("table") || document.getElementById("audit_json");
+  const pre = document.getElementById("audit_json");
   const j = await fetchJson("/api/audit");
-  setBadges(j);
+  setBadges(j || {});
 
-  if(!j.ok){
-    showErr("AUDIT: " + (j.error || "indisponível"));
-    if(tableEl) tableEl.innerHTML = "";
+  if(!j || !j.ok){
+    const dir = j && j.data_dir ? j.data_dir : "-";
+    const err = j && j.error ? j.error : "sem_dados";
+    showErr(`Sem dados: ${err} (DATA_DIR: ${dir})`);
+    if (pre) pre.textContent = "";
     return;
   }
 
   hideErr();
-  const cols = [["name","CHECK"],["ok","OK?"],["detail","DETALHE"]];
-  renderTable(tableEl, j.checks || [], cols);
+  if (pre) pre.textContent = JSON.stringify(j, null, 2);
 }
 
 async function boot(kind){
   try{
-    if(kind==="full") await loadFull();
-    else if(kind==="top10") await loadTop10();
+    if(kind === "full") await loadFull();
+    else if(kind === "top10") await loadTop10();
     else await loadAudit();
   }catch(e){
-    showErr("API indisponível. (" + (e && e.message ? e.message : "erro") + ")");
+    const msg = (e && e.message) ? e.message : "erro";
+    showErr("API indisponível. (" + msg + ")");
   }
 }

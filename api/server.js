@@ -69,7 +69,12 @@ function readVersion() {
 function serveJsonFile(res, filename, notFoundError) {
   const fp = path.join(DATA_DIR, filename);
   const data = safeJsonRead(fp);
-  if (!data) return res.status(404).json({ ok: false, error: notFoundError, data_dir: DATA_DIR });
+  if (!data) {
+    if (filename === "audit.json") return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, checks: [] });
+    if (filename === "top10.json") return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, items: [], count: 0 });
+    if (filename === "pro.json") return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, items: [], count: 0 });
+    return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR });
+  }
   return res.json(data);
 }
 
