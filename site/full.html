@@ -14,8 +14,6 @@
         <div>
           <h1>FULL • ENTRADA PRO</h1>
           <div class="badge" id="upd">carregando…</div>
-          <div class="badge" id="cnt"></div>
-          <div class="badge" id="src"></div>
         </div>
       </div>
       <div class="pill"><a href="/top10.html">TOP10</a> • <a href="/audit.html">AUDIT</a></div>
@@ -23,11 +21,14 @@
 
     <div class="card">
       <div class="h2">TODOS OS PARES</div>
-      <div class="offline" id="err" style="display:none"></div>
 
-      <div class="table-wrap">
-        <div id="table"></div>
+      <div class="badges">
+        <span class="badge" id="cnt">Itens: -</span>
+        <span class="badge" id="src">Fonte: -</span>
       </div>
+
+      <div class="offline" id="err" style="display:block"></div>
+      <div id="table"></div>
     </div>
   </div>
 
