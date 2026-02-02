@@ -2,6 +2,8 @@
 
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
+const https = require("https");
 const express = require("express");
 const cors = require("cors");
 
@@ -38,46 +40,95 @@ function safeJsonRead(fp) {
   }
 }
 
-async function fetchJson(url) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 8000);
-  try {
-    const r = await fetch(url, { signal: controller.signal, headers: { "cache-control": "no-cache" } });
-    if (!r.ok) throw new Error("http_" + r.status);
-    return await r.json();
-  } finally {
-    clearTimeout(t);
-  }
+function getJsonFromUrl(url, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(url);
+      const lib = u.protocol === "https:" ? https : http;
+
+      const req = lib.request(
+        {
+          method: "GET",
+          hostname: u.hostname,
+          path: u.pathname + (u.search || ""),
+          headers: { "cache-control": "no-cache" },
+        },
+        (res) => {
+          // redirecionamento simples
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            return resolve(getJsonFromUrl(res.headers.location, timeoutMs));
+          }
+
+          if (res.statusCode !== 200) {
+            return reject(new Error("http_" + res.statusCode));
+          }
+
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () => {
+            try {
+              resolve(JSON.parse(data));
+            } catch (e) {
+              reject(new Error("invalid_json"));
+            }
+          });
+        }
+      );
+
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error("timeout"));
+      });
+
+      req.on("error", reject);
+      req.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 async function serveJson(res, filename, notFoundError) {
   const now = Date.now();
+
   const url =
     filename === "pro.json" ? PRO_JSON_URL :
     filename === "top10.json" ? TOP10_JSON_URL :
     "";
 
+  // 1) tenta pelo link (Spaces)
   if (url) {
     const c = cache[filename];
     if (c && c.data && now - c.ts < CACHE_TTL_MS) return res.json(c.data);
 
     try {
-      const data = await fetchJson(url);
+      const data = await getJsonFromUrl(url);
       if (c) { c.ts = now; c.data = data; }
       return res.json(data);
     } catch (e) {
-      // cai para o arquivo local
+      // se falhar, tenta local
     }
   }
 
+  // 2) tenta local
   const fp = path.join(DATA_DIR, filename);
-  const data = safeJsonRead(fp);
+  const local = safeJsonRead(fp);
 
-  if (!data) return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, items: [], count: 0 });
-  return res.json(data);
+  if (!local) {
+    return res.json({
+      ok: false,
+      error: notFoundError,
+      data_dir: DATA_DIR,
+      items: [],
+      count: 0,
+    });
+  }
+
+  return res.json(local);
 }
 
-app.get("/", (req, res) => res.json({ ok: true, message: "entrada-pro-api", now_utc: new Date().toISOString() }));
+app.get("/", (req, res) =>
+  res.json({ ok: true, message: "entrada-pro-api", now_utc: new Date().toISOString() })
+);
 
 app.get("/api/health", (req, res) =>
   res.json({
@@ -98,6 +149,4 @@ app.get("/api/version", (req, res) =>
 app.get("/api/pro", async (req, res) => serveJson(res, "pro.json", "pro.json_not_found"));
 app.get("/api/top10", async (req, res) => serveJson(res, "top10.json", "top10.json_not_found"));
 
-app.listen(PORT, () => {
-  console.log(`[ENTRADA-PRO] API on :${PORT}`);
-});
+app.listen(PORT, () => console.log(`[ENTRADA-PRO] API on :${PORT}`));
