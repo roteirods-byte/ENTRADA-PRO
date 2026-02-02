@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 set -e
 
-echo "[START] DATA_DIR=${DATA_DIR}"
+mkdir -p "${DATA_DIR:-/app/data}"
 
-# sobe o worker em background
-python3 -u worker/worker_pro.py &
+# WORKER em loop (não pode morrer, senão o DO derruba/religa)
+(
+  while true; do
+    echo "[START] worker loop..."
+    python3 -u /app/worker/worker_pro.py || true
+    sleep 10
+  done
+) &
 
-# sobe a API (fica em foreground)
-node server.js
+# API em foreground
+echo "[START] api..."
+node /app/api/server.js
