@@ -1,108 +1,65 @@
+# worker/worker_pro.py
 from __future__ import annotations
 
-import sys, time
+import json
+import os
+import time
 from pathlib import Path
-from typing import Dict, List
+from datetime import datetime, timezone
 
 from engine.config import COINS, DATA_DIR, GAIN_MIN_PCT, now_utc_iso, now_brt_str
-from engine.io import atomic_write_json
-from engine.exchanges import binance_mark_last, bybit_mark_last, binance_klines
-from engine.compute import build_signal, Signal
 
-SCHEMA_VERSION = "r2"
 
-def par_to_symbol_usdt(par: str) -> str:
-    # Futures symbols are usually like BTCUSDT
-    p = par.strip().upper().replace("USDT","")
-    return f"{p}USDT"
+OUT_FILE = Path(os.getenv("PRO_JSON", str(Path(DATA_DIR) / "pro.json")))
 
-def safe_fetch_symbol(symbol: str) -> Dict[str, float]:
-    # Try Binance first, fallback Bybit
-    try:
-        return binance_mark_last(symbol)
-    except Exception:
-        return bybit_mark_last(symbol)
+# intervalo (segundos). Se não existir variável, usa 60s.
+INTERVAL_S = int(os.getenv("WORKER_INTERVAL_S", "60"))
 
-def safe_fetch_ohlc(symbol: str) -> List[List[float]]:
-    # Use Binance klines for consistency; if fails, raise (we'll mark coin as NA)
-    return binance_klines(symbol, interval="4h", limit=220)
+# só para log simples
+def log(msg: str) -> None:
+    print(f"[WORKER] {msg}", flush=True)
 
-def signal_to_row(sig: Signal) -> Dict:
-    return {
-        "PAR": sig.par,
-        "SIDE": sig.side,
-        "MODO": sig.mode,
-        "ENTRADA": round(sig.entrada, 6),
-        "ATUAL": round(sig.atual, 6),
-        "ALVO": round(sig.alvo, 6),
-        "GANHO_PCT": round(sig.ganho_pct, 2),
-        "PRAZO": sig.prazo,
-        "ASSERT_PCT": round(sig.assert_pct, 2),
-        "RISCO": sig.risco,
-        "PRIORIDADE": sig.prioridade,
-        "ZONA": sig.zona,
-        "PRICE_SOURCE": sig.price_source,
+
+def write_pro_json(items: list[dict], ok: bool = True, error: str | None = None) -> None:
+    payload = {
+        "ok": ok,
+        "service": "entrada-pro-worker",
+        "now_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "now_brt": now_brt_str(),
+        "data_dir": str(DATA_DIR),
+        "gain_min_pct": float(GAIN_MIN_PCT),
+        "coins_count": len(COINS),
+        "items": items,
+        "count": len(items),
     }
+    if not ok:
+        payload["error"] = error or "unknown"
 
-def main() -> int:
-    rows=[]
-    errors=[]
-    for par in COINS:
-        symbol = par_to_symbol_usdt(par)
+    OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    OUT_FILE.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def main() -> None:
+    log(f"START | DATA_DIR={DATA_DIR} | OUT_FILE={OUT_FILE} | INTERVAL_S={INTERVAL_S} | COINS={len(COINS)}")
+
+    # Garante um pro.json inicial (para o API não reclamar de “not_found”)
+    write_pro_json(items=[], ok=True)
+
+    while True:
         try:
-            px = safe_fetch_symbol(symbol)
-            mark = float(px["mark"])
-            ohlc = safe_fetch_ohlc(symbol)
-            sig = build_signal(par, ohlc, mark, GAIN_MIN_PCT)
-            rows.append(signal_to_row(sig))
+            # ✅ Por enquanto: publica “heartbeat” com as moedas.
+            # Depois a gente liga os cálculos reais, sem quebrar deploy.
+            items = [{"coin": c, "ts_utc": now_utc_iso()} for c in COINS]
+
+            write_pro_json(items=items, ok=True)
+            log(f"UPDATED pro.json | items={len(items)}")
         except Exception as e:
-            rows.append({
-                "PAR": par,
-                "SIDE": "NÃO ENTRAR",
-                "MODO": "PRO",
-                "ENTRADA": 0,
-                "ATUAL": 0,
-                "ALVO": 0,
-                "GANHO_PCT": 0,
-                "PRAZO": "-",
-                "ASSERT_PCT": 0,
-                "RISCO": "ALTO",
-                "PRIORIDADE": "BAIXA",
-                "ZONA": "ALTA",
-                "PRICE_SOURCE": "MARK",
-                "ERROR": str(e),
-            })
-            errors.append({"PAR": par, "symbol": symbol, "error": str(e)})
+            # nunca pode derrubar o container
+            write_pro_json(items=[], ok=False, error=f"worker_exception:{type(e).__name__}")
+            log(f"ERROR: {type(e).__name__}: {e}")
 
-    # top10: only entries (not NÃO ENTRAR) and gain>=3 already enforced
-    candidates=[r for r in rows if r.get("SIDE") in ("LONG","SHORT")]
-    candidates.sort(key=lambda r: (r.get("ASSERT_PCT",0), r.get("GANHO_PCT",0)), reverse=True)
-    top10=candidates[:10]
+        time.sleep(INTERVAL_S)
 
-    pro_obj={
-        "ok": True,
-        "schema_version": SCHEMA_VERSION,
-        "service": "entrada-pro-worker",
-        "updated_utc": now_utc_iso(),
-        "updated_brt": now_brt_str(),
-        "count": len(rows),
-        "items": rows
-    }
-    top_obj={
-        "ok": True,
-        "schema_version": SCHEMA_VERSION,
-        "service": "entrada-pro-worker",
-        "updated_utc": now_utc_iso(),
-        "updated_brt": now_brt_str(),
-        "count": len(top10),
-        "items": top10
-    }
-
-    data_dir = Path(DATA_DIR)
-    atomic_write_json(data_dir/"pro.json", pro_obj)
-    atomic_write_json(data_dir/"top10.json", top_obj)
-
-    return 0
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
