@@ -3,65 +3,92 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
-from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
+from pathlib import Path
 
-# ====== TIME ======
-_TZ_BRT = ZoneInfo("America/Sao_Paulo")
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None  # type: ignore
 
+
+# ---------- Paths ----------
+ENGINE_DIR = Path(__file__).resolve().parent            # /workspace/worker/engine
+WORKER_DIR = ENGINE_DIR.parent                          # /workspace/worker
+REPO_DIR = WORKER_DIR.parent                            # /workspace (se o repo todo estiver presente)
+
+DEFAULT_COINS = [
+    "AAVE","ADA","APT","ARB","ATOM","AVAX","AXS","BCH","BNB","BTC","DOGE","DOT","ETH",
+    "FET","FIL","FLUX","ICP","INJ","LDO","LINK","LTC","NEAR","OP","PEPE","POL","RATS",
+    "RENDER","RUNE","SEI","SHIB","SOL","SUI","TIA","TNSR","TON","TRX","UNI","WIF","XRP"
+]
+
+
+def _load_json_file(fp: Path) -> dict:
+    return json.loads(fp.read_text(encoding="utf-8"))
+
+
+def _resolve_coins() -> list[str]:
+    # 1) COINS_FILE por variável de ambiente (se quiser, você pode setar no DO)
+    env_fp = os.getenv("COINS_FILE", "").strip()
+    candidates: list[Path] = []
+    if env_fp:
+        candidates.append(Path(env_fp))
+
+    # 2) Caminhos prováveis (depende do Source Directory do DO)
+    candidates += [
+        REPO_DIR / "config" / "coins.json",     # quando o repo root está no build
+        WORKER_DIR / "config" / "coins.json",   # quando Source Directory = worker e você colocar worker/config/coins.json
+        ENGINE_DIR / "config" / "coins.json",   # fallback raro
+    ]
+
+    for p in candidates:
+        try:
+            if p.is_file():
+                data = _load_json_file(p)
+                coins = data.get("coins")
+                if isinstance(coins, list) and coins:
+                    # normaliza: string, sem espaços, sem USDT, ordem alfabética
+                    norm = []
+                    for c in coins:
+                        if not isinstance(c, str):
+                            continue
+                        c = c.strip().upper().replace("USDT", "")
+                        if c:
+                            norm.append(c)
+                    return sorted(list(dict.fromkeys(norm)))
+        except Exception:
+            pass
+
+    # 3) Se não achou, NÃO quebra o worker
+    return DEFAULT_COINS
+
+
+# ---------- Settings ----------
+COINS = _resolve_coins()
+
+# Diretório de dados (onde sai pro.json)
+DATA_DIR = os.getenv("DATA_DIR", "/workspace/data").strip() or "/workspace/data"
+Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
+
+# Ganho mínimo (%) antes de publicar sinal
+def _float_env(key: str, default: float) -> float:
+    v = os.getenv(key, "").strip().replace(",", ".")
+    try:
+        return float(v) if v else float(default)
+    except Exception:
+        return float(default)
+
+GAIN_MIN_PCT = _float_env("GAIN_MIN_PCT", 3.0)
+
+
+# ---------- Time helpers ----------
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
+
 def now_brt_str() -> str:
-    return datetime.now(_TZ_BRT).strftime("%d/%m/%Y %H:%M")
-
-# ====== DEFAULT COINS (39) ======
-DEFAULT_COINS = [
-    "AAVE","ADA","APT","ARB","ATOM","AVAX","AXS","BCH","BNB","BTC",
-    "DOGE","DOT","ETH","FET","FIL","FLUX","ICP","INJ","LDO","LINK",
-    "LTC","NEAR","OP","PEPE","POL","RATS","RENDER","RUNE","SEI","SHIB",
-    "SOL","SUI","TIA","TNSR","TON","TRX","UNI","WIF","XRP"
-]
-
-def _read_json(fp: Path) -> dict:
-    return json.loads(fp.read_text(encoding="utf-8"))
-
-def _find_coins_file() -> Path | None:
-    # 1) Se você quiser, pode setar via ENV: COINS_FILE
-    env_fp = os.getenv("COINS_FILE", "").strip()
-    if env_fp:
-        p = Path(env_fp)
-        if p.exists():
-            return p
-
-    # 2) caminhos comuns (DO Worker usa /workspace/worker como app root)
-    candidates = [
-        Path("config/coins.json"),
-        Path("worker/config/coins.json"),
-        Path("/workspace/worker/config/coins.json"),
-        Path("/workspace/config/coins.json"),
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    return None
-
-# ====== DIRS / PARAMS ======
-DATA_DIR = os.getenv("DATA_DIR", "/workspace/data").strip() or "/workspace/data"
-GAIN_MIN_PCT = float(os.getenv("GAIN_MIN_PCT", "3.0"))  # regra mínima 3%
-
-# ====== COINS LOAD (com fallback) ======
-_COINS_FP = _find_coins_file()
-if _COINS_FP:
-    try:
-        COINS = _read_json(_COINS_FP).get("coins", DEFAULT_COINS)
-        if not isinstance(COINS, list) or not COINS:
-            COINS = DEFAULT_COINS
-    except Exception:
-        COINS = DEFAULT_COINS
-else:
-    COINS = DEFAULT_COINS
-
-# normaliza (maiúsculo / sem espaços) e ordena
-COINS = sorted({str(x).strip().upper() for x in COINS if str(x).strip()})
+    if ZoneInfo is None:
+        return datetime.now().strftime("%H:%M")
+    tz = ZoneInfo("America/Sao_Paulo")
+    return datetime.now(tz).strftime("%H:%M")
