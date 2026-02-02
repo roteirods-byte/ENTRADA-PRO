@@ -10,7 +10,10 @@ const cors = require("cors");
 const app = express();
 app.use(cors());
 
-const PORT = parseInt(process.env.PORT || "8090", 10);
+// ✅ DigitalOcean: use sempre process.env.PORT (e fallback 8080)
+const PORT = parseInt(process.env.PORT || "8080", 10);
+
+// ✅ Data dir padrão
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 
 function safeJsonRead(fp) {
@@ -57,7 +60,6 @@ function readVersion() {
       }
     } catch (e) {}
   }
-  // fallback: package.json
   try {
     const pj = require("./package.json");
     return pj && pj.version ? String(pj.version) : "0.0.0";
@@ -70,15 +72,18 @@ function serveJsonFile(res, filename, notFoundError) {
   const fp = path.join(DATA_DIR, filename);
   const data = safeJsonRead(fp);
   if (!data) {
-    if (filename === "audit.json") return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, checks: [] });
-    if (filename === "top10.json") return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, items: [], count: 0 });
-    if (filename === "pro.json") return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, items: [], count: 0 });
+    if (filename === "audit.json")
+      return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, checks: [] });
+    if (filename === "top10.json")
+      return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, items: [], count: 0 });
+    if (filename === "pro.json")
+      return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR, items: [], count: 0 });
     return res.json({ ok: false, error: notFoundError, data_dir: DATA_DIR });
   }
   return res.json(data);
 }
 
-// compat (nginx pode reescrever /api/* -> /* dependendo do proxy_pass)
+// compat
 app.get("/health", (req, res) => res.json(healthPayload()));
 app.get("/api/health", (req, res) => res.json(healthPayload()));
 
@@ -105,13 +110,18 @@ app.get("/api/pro/top10", (req, res) => serveJsonFile(res, "top10.json", "top10.
 app.get("/api/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json_not_found"));
 app.get("/audit", (req, res) => serveJsonFile(res, "audit.json", "audit.json_not_found"));
 
-// static site (opcional) se quiser servir pelo node
-const SITE_DIR = process.env.SITE_DIR || (() => {
-  const dist = path.join(__dirname, "..", "dist");
-  const site = path.join(__dirname, "..", "site");
-  try { if (fs.existsSync(dist)) return dist; } catch(e) {}
-  return site;
-})();
+// static site (opcional)
+const SITE_DIR =
+  process.env.SITE_DIR ||
+  (() => {
+    const dist = path.join(__dirname, "..", "dist");
+    const site = path.join(__dirname, "..", "site");
+    try {
+      if (fs.existsSync(dist)) return dist;
+    } catch (e) {}
+    return site;
+  })();
+
 app.use("/", express.static(SITE_DIR));
 
 app.listen(PORT, () => {
