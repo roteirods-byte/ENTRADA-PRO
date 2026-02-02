@@ -97,4 +97,31 @@ def load_settings() -> dict:
 def _env_float(key: str, default: float) -> float:
     v = os.getenv(key, "").strip().replace(",", ".")
     try:
-        return float(v) if
+        return float(v) if v else float(default)
+    except Exception:
+        return float(default)
+
+
+def now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def now_brt_str() -> str:
+    if ZoneInfo is None:
+        # fallback simples
+        return datetime.now().strftime("%H:%M")
+    tz = ZoneInfo(BRT_TZ_NAME)
+    return datetime.now(tz).strftime("%H:%M")
+
+
+# ====== CONFIG PRINCIPAL (exportado) ======
+SETTINGS = load_settings()
+
+COINS = load_coins()
+
+# DATA_DIR precisa existir
+DATA_DIR = os.getenv("DATA_DIR", "/workspace/data")
+Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
+
+# regra do projeto: lucro mínimo ~ 3% (default)
+GAIN_MIN_PCT = _env_float("GAIN_MIN_PCT", float(SETTINGS.get("gain_min_pct", 3.0)))
