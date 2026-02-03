@@ -45,6 +45,8 @@ const COLS_TOP10 = [
   ['ZONA', 'zona'],
   ['RISCO', 'risco'],
   ['PRIORIDADE', 'prioridade'],
+  ['DATA', 'data'],
+  ['HORA', 'hora'],
 ];
 
 // ===== Formatacao =====
@@ -115,6 +117,12 @@ function brtTimeFromIso(iso) {
     return '';
   }
 }
+
+function brtPartsFromIso(iso){
+  // retorna { date: 'DD/MM/AAAA', time: 'HH:MM' } em BRT
+  return { date: brtDateFromIso(iso), time: brtTimeFromIso(iso) };
+}
+
 
 // ====== normalize keys from worker JSON ======
 function pick(obj, keys) {
