@@ -16,23 +16,21 @@
   <div class="bar">
     <a class="tab" href="#" onclick="go('full.html');return false;">FULL</a>
     <a class="tab" href="#" onclick="go('top10.html');return false;">TOP10</a>
-    <a class="tab" href="#" onclick="go('audit.html');return false;">AUDITORIA</a>
-  </div>
+</div>
   <iframe id="view" src="full.html"></iframe>
   <script>
     function setActive(name){
       document.querySelectorAll(".tab").forEach(a=>a.classList.remove("active"));
       if(name==="full.html") document.querySelectorAll(".tab")[0].classList.add("active");
       if(name==="top10.html") document.querySelectorAll(".tab")[1].classList.add("active");
-      
-    }
+      }
     function go(name){
       document.getElementById("view").src = name;
       setActive(name);
       history.replaceState(null,"","index.html#" + name);
     }
     const h = (location.hash||"").replace("#","");
-    if(h==="top10.html"||h==="full.html") go(h); else go("full.html");
+    if(h==="top10.html"||h==="full.html") go(h); else setActive("full.html");
   </script>
 </body>
 </html>

@@ -1,25 +1,45 @@
 <!doctype html>
 <html lang="pt-br">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FULL • ENTRADA PRO</title>
-  <link rel="stylesheet" href="assets/style.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>FULL - ENTRADA PRO</title>
+  <link rel="stylesheet" href="/assets/style.css"/>
 </head>
-<body data-kind="full">
+<body>
   <div class="container">
-    <div class="title-row">
-      <h1>FULL • ENTRADA PRO</h1>
-      <div class="pill" id="meta">Atualizado (BRT): - • Itens: 0 • Fonte: -</div>
+    <div class="topbar">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>
+          <h1>FULL • ENTRADA PRO</h1>
+          <div class="badge" id="meta">carregando…</div>
+        </div>
+      </div>
+      <div class="pill"><a href="/top10.html">TOP10</a> •
+</div>
     </div>
 
-    <div class="panel">
+    <div class="card">
+      <div class="h2">TODOS OS PARES</div>
+      <div class="offline" id="offline" style="display:none"></div>
+
       <div class="table-wrap">
-        <div id="table"></div>
+        <table class="table">
+          <thead>
+            <tr>
+                            <th>PAR</th><th>SIDE</th><th>ENTRADA</th><th>ATUAL</th><th>ALVO</th><th>GANHO %</th><th>ASSERT %</th><th>PRAZO</th><th>ZONA</th><th>RISCO</th><th>PRIORIDADE</th><th>DATA</th><th>HORA</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
       </div>
+
+      <div class="cards" id="cards"></div>
     </div>
   </div>
 
-  <script src="assets/common.js"></script>
+  <script src="/assets/common.js"></script>
+  <script>boot("full");</script>
 </body>
 </html>
