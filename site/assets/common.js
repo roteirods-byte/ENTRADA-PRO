@@ -78,7 +78,6 @@ function fmtText(v) {
 }
 
 function nowBrt() {
-  // usa o horario do navegador do usuario; o texto diz BRT
   const d = new Date();
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -118,12 +117,6 @@ function brtTimeFromIso(iso) {
   }
 }
 
-function brtPartsFromIso(iso){
-  // retorna { date: 'DD/MM/AAAA', time: 'HH:MM' } em BRT
-  return { date: brtDateFromIso(iso), time: brtTimeFromIso(iso) };
-}
-
-
 // ====== normalize keys from worker JSON ======
 function pick(obj, keys) {
   for (const k of keys) {
@@ -133,7 +126,6 @@ function pick(obj, keys) {
 }
 
 function normalizeItem(it, fallbackIso) {
-  // aceita chaves em maiusculo, com espacos e %
   const out = {
     par: pick(it, ['par', 'PAR', 'Par']),
     side: pick(it, ['side', 'SIDE', 'Side']),
@@ -150,7 +142,7 @@ function normalizeItem(it, fallbackIso) {
     hora: pick(it, ['hora', 'HORA', 'Hora']),
   };
 
-  // se DATA/HORA vierem vazios, usa o updated_at do arquivo como padrao
+  // Se DATA/HORA vierem vazios, usa a data/hora do "updated_at" (fallbackIso)
   if ((!out.data || out.data === '-') && fallbackIso) out.data = brtDateFromIso(fallbackIso);
   if ((!out.hora || out.hora === '-') && fallbackIso) out.hora = brtTimeFromIso(fallbackIso);
 
@@ -267,7 +259,6 @@ function setStatus(msg, isErr = false) {
 function setBadges(info) {
   const el = q('#badges');
   if (!el) return;
-  // Opcional: pode esconder esta faixa se quiser.
   const { updatedBrt, count, source } = info;
   el.textContent = `Atualizado (BRT): ${updatedBrt} • Itens: ${count} • Fonte: ${source}`;
 }
@@ -311,9 +302,12 @@ async function boot(kind) {
     const raw = out.raw || {};
     const itemsRaw = raw.items || raw || [];
     const updatedIso = (raw && raw.updated_at) ? String(raw.updated_at) : null;
+
+    // Fallback seguro: se não vier updated_at, usa agora
+    const fallbackIso = updatedIso || new Date().toISOString();
+
     const updatedBrt = updatedIso ? brtFromIso(updatedIso) : nowBrt();
-    const parts = updatedIso ? brtPartsFromIso(updatedIso) : brtPartsFromIso(new Date().toISOString());
-    const items = normalizeItems(itemsRaw, { date: parts.date, time: parts.time });
+    const items = normalizeItems(itemsRaw, fallbackIso);
 
     // Auditoria simples: se vier lista mas sem PAR/SIDE, considera formato inesperado
     if (Array.isArray(itemsRaw) && itemsRaw.length > 0) {
