@@ -1,143 +1,125 @@
 // api/server.js
-const express = require("express");
-const cors = require("cors");
-const http = require("http");
-const https = require("https");
+'use strict';
+
+const express = require('express');
 
 const app = express();
-app.use(cors());
+app.disable('x-powered-by');
 
-// ---- Config ----
-const PORT = process.env.PORT || 8080;
-const SERVICE = "entrada-pro-api";
-const APP_VERSION = process.env.APP_VERSION || "unknown";
+// ====== CONFIG ======
+const SERVICE = 'entrada-pro-api';
+const PORT = Number(process.env.PORT || 8080);
+const DATA_DIR = process.env.DATA_DIR || '/workspace/data';
 
-const PRO_JSON_URL = (process.env.PRO_JSON_URL || "").trim();
-const TOP10_JSON_URL = (process.env.TOP10_JSON_URL || "").trim();
+const PRO_JSON_URL = (process.env.PRO_JSON_URL || '').trim();
+const TOP10_JSON_URL = (process.env.TOP10_JSON_URL || '').trim();
 
-// Cache (último dado bom)
+// cache simples p/ evitar 504 e excesso de chamadas
+const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 60_000);
+
 const cache = {
-  pro: { items: [], count: 0, updated_at: null },
-  top10: { items: [], count: 0, updated_at: null },
+  pro: { at: 0, data: null, err: null },
+  top10: { at: 0, data: null, err: null },
 };
 
-function nowUTC() {
+function nowUtc() {
   return new Date().toISOString();
 }
 
-function parseItems(data) {
-  // Aceita: Array, {items:[...]}, ou qualquer objeto (vira 1 item)
-  if (Array.isArray(data)) return { items: data, count: data.length };
+async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (data && typeof data === "object" && Array.isArray(data.items)) {
-    const items = data.items;
-    const count = Number.isFinite(data.count) ? data.count : items.length;
-    return { items, count };
-  }
-
-  if (data && typeof data === "object") return { items: [data], count: 1 };
-
-  return { items: [], count: 0 };
-}
-
-function fetchJson(url, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    if (!url) return reject(new Error("url_empty"));
-
-    const lib = url.startsWith("https://") ? https : http;
-
-    const req = lib.get(url, (res) => {
-      const sc = res.statusCode || 0;
-
-      if (sc < 200 || sc >= 300) {
-        res.resume();
-        return reject(new Error(`http_${sc}`));
-      }
-
-      let raw = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => (raw += chunk));
-      res.on("end", () => {
-        try {
-          resolve(JSON.parse(raw));
-        } catch {
-          reject(new Error("json_parse_error"));
-        }
-      });
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'accept': 'application/json' },
     });
 
-    req.on("error", (err) => reject(err));
-    req.setTimeout(timeoutMs, () => req.destroy(new Error("timeout")));
-  });
+    if (!res.ok) {
+      const err = new Error(`http_${res.status}`);
+      err.code = `http_${res.status}`;
+      throw err;
+    }
+
+    return await res.json();
+  } finally {
+    clearTimeout(t);
+  }
 }
 
-// ---- Routes ----
-app.get("/", (req, res) => res.status(200).send("ok"));
+async function getCached(key, url) {
+  const slot = cache[key];
+  const age = Date.now() - slot.at;
 
-app.get("/api/version", (req, res) => {
+  if (slot.data && age < CACHE_TTL_MS) {
+    return { ok: true, source: 'cache', updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
+  }
+
+  if (!url) {
+    return { ok: false, error: 'url_not_set' };
+  }
+
+  try {
+    const json = await fetchJsonWithTimeout(url, 8000);
+    slot.at = Date.now();
+    slot.data = json;
+    slot.err = null;
+
+    return { ok: true, source: 'spaces', updated_at: nowUtc(), items: json.items ?? json, raw: json };
+  } catch (e) {
+    slot.at = Date.now();
+    slot.err = e?.code || e?.message || 'fetch_error';
+
+    // se já tem dado antigo, devolve o antigo p/ não quebrar
+    if (slot.data) {
+      return { ok: true, source: 'stale_cache', warning: slot.err, updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
+    }
+
+    return { ok: false, error: slot.err };
+  }
+}
+
+// ====== ROUTES ======
+app.get('/', (req, res) => {
+  res.status(200).send(
+    `OK: ${SERVICE}\n` +
+    `GET /api/version\n` +
+    `GET /api/pro\n` +
+    `GET /api/top10\n`
+  );
+});
+
+app.get('/api/version', (req, res) => {
   res.json({
     ok: true,
     service: SERVICE,
-    version: APP_VERSION,
-    now_utc: nowUTC(),
-    pro_json_url: PRO_JSON_URL ? "set" : "missing",
-    top10_json_url: TOP10_JSON_URL ? "set" : "missing",
+    version: process.env.APP_VERSION || 'unknown',
+    now_utc: nowUtc(),
+    data_dir: DATA_DIR,
+    pro_json_url: PRO_JSON_URL ? 'set' : 'missing',
+    top10_json_url: TOP10_JSON_URL ? 'set' : 'missing',
   });
 });
 
-app.get("/api/pro", async (req, res) => {
-  try {
-    if (!PRO_JSON_URL) return res.status(500).json({ ok: false, error: "PRO_JSON_URL_missing" });
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-    const data = await fetchJson(PRO_JSON_URL, 8000);
-    const { items, count } = parseItems(data);
-
-    cache.pro = { items, count, updated_at: nowUTC() };
-
-    return res.json({ ok: true, source: "spaces", updated_at: cache.pro.updated_at, items, count });
-  } catch (e) {
-    if (cache.pro.count > 0) {
-      return res.json({
-        ok: true,
-        source: "cache",
-        warning: String(e.message || e),
-        updated_at: cache.pro.updated_at,
-        items: cache.pro.items,
-        count: cache.pro.count,
-      });
-    }
-    return res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
+app.get('/api/pro', async (req, res) => {
+  const out = await getCached('pro', PRO_JSON_URL);
+  if (!out.ok) return res.status(500).json(out);
+  return res.json(out);
 });
 
-app.get("/api/top10", async (req, res) => {
-  try {
-    if (!TOP10_JSON_URL) return res.status(500).json({ ok: false, error: "TOP10_JSON_URL_missing" });
-
-    const data = await fetchJson(TOP10_JSON_URL, 8000);
-    const { items, count } = parseItems(data);
-
-    cache.top10 = { items, count, updated_at: nowUTC() };
-
-    return res.json({ ok: true, source: "spaces", updated_at: cache.top10.updated_at, items, count });
-  } catch (e) {
-    if (cache.top10.count > 0) {
-      return res.json({
-        ok: true,
-        source: "cache",
-        warning: String(e.message || e),
-        updated_at: cache.top10.updated_at,
-        items: cache.top10.items,
-        count: cache.top10.count,
-      });
-    }
-    return res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
+app.get('/api/top10', async (req, res) => {
+  const out = await getCached('top10', TOP10_JSON_URL);
+  if (!out.ok) return res.status(500).json(out);
+  return res.json(out);
 });
 
-// ---- Start ----
+// ====== START ======
 app.listen(PORT, () => {
-  console.log(`[${SERVICE}] listening on ${PORT} | now=${nowUTC()}`);
-  console.log(`[${SERVICE}] PRO_JSON_URL=${PRO_JSON_URL ? "set" : "missing"}`);
-  console.log(`[${SERVICE}] TOP10_JSON_URL=${TOP10_JSON_URL ? "set" : "missing"}`);
+  console.log(`[${SERVICE}] listening on ${PORT} | now=${nowUtc()}`);
+  console.log(`[${SERVICE}] DATA_DIR=${DATA_DIR}`);
+  console.log(`[${SERVICE}] PRO_JSON_URL=${PRO_JSON_URL ? 'set' : 'missing'}`);
+  console.log(`[${SERVICE}] TOP10_JSON_URL=${TOP10_JSON_URL ? 'set' : 'missing'}`);
 });
