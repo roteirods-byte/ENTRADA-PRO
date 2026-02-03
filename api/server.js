@@ -33,7 +33,7 @@ async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'accept': 'application/json' },
+      headers: { accept: 'application/json' },
     });
 
     if (!res.ok) {
@@ -53,7 +53,13 @@ async function getCached(key, url) {
   const age = Date.now() - slot.at;
 
   if (slot.data && age < CACHE_TTL_MS) {
-    return { ok: true, source: 'cache', updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
+    return {
+      ok: true,
+      source: 'cache',
+      updated_at: nowUtc(),
+      items: slot.data.items ?? slot.data,
+      raw: slot.data,
+    };
   }
 
   if (!url) {
@@ -66,14 +72,27 @@ async function getCached(key, url) {
     slot.data = json;
     slot.err = null;
 
-    return { ok: true, source: 'spaces', updated_at: nowUtc(), items: json.items ?? json, raw: json };
+    return {
+      ok: true,
+      source: 'spaces',
+      updated_at: nowUtc(),
+      items: json.items ?? json,
+      raw: json,
+    };
   } catch (e) {
     slot.at = Date.now();
     slot.err = e?.code || e?.message || 'fetch_error';
 
     // se já tem dado antigo, devolve o antigo p/ não quebrar
     if (slot.data) {
-      return { ok: true, source: 'stale_cache', warning: slot.err, updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
+      return {
+        ok: true,
+        source: 'stale_cache',
+        warning: slot.err,
+        updated_at: nowUtc(),
+        items: slot.data.items ?? slot.data,
+        raw: slot.data,
+      };
     }
 
     return { ok: false, error: slot.err };
@@ -81,16 +100,20 @@ async function getCached(key, url) {
 }
 
 // ====== ROUTES ======
-app.get('/', (req, res) => {
+
+// Home
+app.get(['/', '/api'], (req, res) => {
   res.status(200).send(
     `OK: ${SERVICE}\n` +
-    `GET /api/version\n` +
-    `GET /api/pro\n` +
-    `GET /api/top10\n`
+      `GET /api/version  OR  GET /version\n` +
+      `GET /api/pro      OR  GET /pro\n` +
+      `GET /api/top10    OR  GET /top10\n` +
+      `GET /api/health   OR  GET /health\n`
   );
 });
 
-app.get('/api/version', (req, res) => {
+// VERSION (com e sem /api)
+app.get(['/api/version', '/version'], (req, res) => {
   res.json({
     ok: true,
     service: SERVICE,
@@ -102,15 +125,18 @@ app.get('/api/version', (req, res) => {
   });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// HEALTH (com e sem /api)
+app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true }));
 
-app.get('/api/pro', async (req, res) => {
+// PRO (com e sem /api)
+app.get(['/api/pro', '/pro'], async (req, res) => {
   const out = await getCached('pro', PRO_JSON_URL);
   if (!out.ok) return res.status(500).json(out);
   return res.json(out);
 });
 
-app.get('/api/top10', async (req, res) => {
+// TOP10 (com e sem /api)
+app.get(['/api/top10', '/top10'], async (req, res) => {
   const out = await getCached('top10', TOP10_JSON_URL);
   if (!out.ok) return res.status(500).json(out);
   return res.json(out);
