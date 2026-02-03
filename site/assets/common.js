@@ -86,6 +86,74 @@ function nowBrt() {
   return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
 }
 
+function brtFromIso(iso) {
+  if (!iso) return nowBrt();
+  try {
+    const d = new Date(iso);
+    const date = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const time = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    return `${date} ${time}`;
+  } catch {
+    return nowBrt();
+  }
+}
+
+function brtDateFromIso(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  } catch {
+    return '';
+  }
+}
+
+function brtTimeFromIso(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
+// ====== normalize keys from worker JSON ======
+function pick(obj, keys) {
+  for (const k of keys) {
+    if (obj && Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
+  }
+  return undefined;
+}
+
+function normalizeItem(it, fallbackIso) {
+  // aceita chaves em maiusculo, com espacos e %
+  const out = {
+    par: pick(it, ['par', 'PAR', 'Par']),
+    side: pick(it, ['side', 'SIDE', 'Side']),
+    entrada: pick(it, ['entrada', 'ENTRADA', 'Entrada']),
+    atual: pick(it, ['atual', 'ATUAL', 'Atual', 'price', 'PRICE']),
+    alvo: pick(it, ['alvo', 'ALVO', 'Alvo']),
+    ganho_pct: pick(it, ['ganho_pct', 'GANHO_PCT', 'GANHO %', 'GANHO%', 'Ganho %', 'GANHO']),
+    assert_pct: pick(it, ['assert_pct', 'ASSERT_PCT', 'ASSERT %', 'ASSERT%', 'Assert %', 'ASSERT']),
+    prazo: pick(it, ['prazo', 'PRAZO', 'Prazo']),
+    zona: pick(it, ['zona', 'ZONA', 'Zona']),
+    risco: pick(it, ['risco', 'RISCO', 'Risco']),
+    prioridade: pick(it, ['prioridade', 'PRIORIDADE', 'Prioridade']),
+    data: pick(it, ['data', 'DATA', 'Data']),
+    hora: pick(it, ['hora', 'HORA', 'Hora']),
+  };
+
+  // se DATA/HORA vierem vazios, usa o updated_at do arquivo como padrao
+  if ((!out.data || out.data === '-') && fallbackIso) out.data = brtDateFromIso(fallbackIso);
+  if ((!out.hora || out.hora === '-') && fallbackIso) out.hora = brtTimeFromIso(fallbackIso);
+
+  return out;
+}
+
+function normalizeItems(items, fallbackIso) {
+  if (!Array.isArray(items)) return [];
+  return items.map(it => normalizeItem(it || {}, fallbackIso));
+}
+
 // ===== Cores =====
 const GAIN_OK = 3.0;
 const ASSERT_OK = 65.0;
@@ -213,8 +281,8 @@ function renderTable(kind, items) {
       else if (key === 'assert_pct') { text = fmtPct(raw); cls = assertClass(raw); }
       else if (key === 'side') { text = fmtText(raw).toUpperCase(); cls = sideClass(raw); }
       else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
+      else if (key === 'risco') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
       else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
-      else if (key === 'risco') { text = fmtText(raw).toUpperCase(); /* sem cor */ }
       else if (key === 'data') text = fmtText(raw);
       else if (key === 'hora') text = fmtText(raw);
       else text = fmtText(raw);
@@ -233,9 +301,21 @@ async function boot(kind) {
     if (!out.ok) throw new Error('load_error');
 
     const raw = out.raw || {};
-    const items = raw.items || raw || [];
+    const itemsRaw = raw.items || raw || [];
+    const updatedIso = (raw && raw.updated_at) ? String(raw.updated_at) : null;
+    const updatedBrt = updatedIso ? brtFromIso(updatedIso) : nowBrt();
+    const parts = updatedIso ? brtPartsFromIso(updatedIso) : brtPartsFromIso(new Date().toISOString());
+    const items = normalizeItems(itemsRaw, { date: parts.date, time: parts.time });
 
-    const updatedBrt = (raw && raw.updated_at) ? String(raw.updated_at) : nowBrt();
+    // Auditoria simples: se vier lista mas sem PAR/SIDE, considera formato inesperado
+    if (Array.isArray(itemsRaw) && itemsRaw.length > 0) {
+      const hasPar = items.some(it => String(it?.par ?? '').trim() !== '');
+      const hasSide = items.some(it => String(it?.side ?? '').trim() !== '');
+      if (!hasPar || !hasSide) {
+        throw new Error('Formato de dados inesperado (faltando PAR/SIDE)');
+      }
+    }
+
     const count = Array.isArray(items) ? items.length : 0;
     const source = raw.source || out.source;
 
