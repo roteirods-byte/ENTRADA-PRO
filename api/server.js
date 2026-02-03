@@ -27,8 +27,8 @@ const TOP10_JSON_URL = (process.env.TOP10_JSON_URL || '').trim();
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 60_000);
 
 const cache = {
-  pro: { at: 0, data: null, err: null, updated_at: null },
-  top10: { at: 0, data: null, err: null, updated_at: null },
+  pro: { at: 0, data: null, err: null },
+  top10: { at: 0, data: null, err: null },
 };
 
 function nowUtc() {
@@ -62,13 +62,7 @@ async function getCached(key, url) {
   const age = Date.now() - slot.at;
 
   if (slot.data && age < CACHE_TTL_MS) {
-    return {
-      ok: true,
-      source: 'cache',
-      updated_at: slot.updated_at || nowUtc(),
-      items: slot.data.items ?? slot.data,
-      raw: slot.data,
-    };
+    return { ok: true, source: 'cache', updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
   }
 
   if (!url) {
@@ -80,22 +74,14 @@ async function getCached(key, url) {
     slot.at = Date.now();
     slot.data = json;
     slot.err = null;
-    slot.updated_at = (json && json.updated_at) ? String(json.updated_at) : nowUtc();
 
-    return { ok: true, source: 'spaces', updated_at: slot.updated_at, items: json.items ?? json, raw: json };
+    return { ok: true, source: 'spaces', updated_at: nowUtc(), items: json.items ?? json, raw: json };
   } catch (e) {
     slot.at = Date.now();
     slot.err = e?.code || e?.message || 'fetch_error';
 
     if (slot.data) {
-      return {
-        ok: true,
-        source: 'stale_cache',
-        warning: slot.err,
-        updated_at: slot.updated_at || nowUtc(),
-        items: slot.data.items ?? slot.data,
-        raw: slot.data,
-      };
+      return { ok: true, source: 'stale_cache', warning: slot.err, updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
     }
 
     return { ok: false, error: slot.err };

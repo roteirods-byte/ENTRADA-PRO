@@ -1,30 +1,155 @@
-// BUILD FIX: common.js v3 (2026-02-01)
-// - Compatível com o HTML atual (FULL/TOP10 usa tbody#rows)
-// - Se a API responder ok=false, mostra motivo (sem tratar como "API caiu")
+/* ENTRADA PRO - common.js (revisado)
+   Regras principais:
+   - FULL: base (77 moedas)
+   - TOP10: copia do FULL (top 10)
+   - Cores:
+     * GANHO %: >= 3% verde, < 3% vermelho
+     * ASSERT %: >= 65% verde, < 65% vermelho
+     * SIDE: LONG verde, SHORT vermelho, NAO ENTRAR amarelo
+     * ZONA / PRIORIDADE: BAIXA verde, MEDIA laranja, ALTA vermelho
+   - Sem pagina extra
+*/
 
+'use strict';
+
+const CACHE_BUST = Date.now();
+
+function q(sel) { return document.querySelector(sel); }
+
+// ===== Colunas =====
+const COLS_FULL = [
+  ['PAR', 'par'],
+  ['SIDE', 'side'],
+  ['ENTRADA', 'entrada'],
+  ['ATUAL', 'atual'],
+  ['ALVO', 'alvo'],
+  ['GANHO %', 'ganho_pct'],
+  ['ASSERT %', 'assert_pct'],
+  ['PRAZO', 'prazo'],
+  ['ZONA', 'zona'],
+  ['RISCO', 'risco'],
+  ['PRIORIDADE', 'prioridade'],
+  ['DATA', 'data'],
+  ['HORA', 'hora'],
+];
+
+const COLS_TOP10 = [
+  ['PAR', 'par'],
+  ['SIDE', 'side'],
+  ['ENTRADA', 'entrada'],
+  ['ATUAL', 'atual'],
+  ['ALVO', 'alvo'],
+  ['GANHO %', 'ganho_pct'],
+  ['ASSERT %', 'assert_pct'],
+  ['PRAZO', 'prazo'],
+  ['ZONA', 'zona'],
+  ['RISCO', 'risco'],
+  ['PRIORIDADE', 'prioridade'],
+];
+
+// ===== Formatacao =====
+function toNum(v) {
+  if (v === null || v === undefined) return NaN;
+  const s = String(v).replace(',', '.').trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function fmtPrice(v) {
+  const n = toNum(v);
+  if (!Number.isFinite(n)) return v == null ? '-' : String(v);
+  const abs = Math.abs(n);
+  if (abs > 0 && abs < 1) return n.toFixed(8); // moedas pequenas
+  return n.toFixed(3);
+}
+
+function fmtPct(v) {
+  const n = toNum(v);
+  if (!Number.isFinite(n)) return v == null ? '-' : String(v);
+  return n.toFixed(2) + '%';
+}
+
+function fmtText(v) {
+  if (v === null || v === undefined) return '-';
+  const s = String(v).trim();
+  return s === '' ? '-' : s;
+}
+
+function nowBrt() {
+  // usa o horario do navegador do usuario; o texto diz BRT
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+}
+
+// ===== Cores =====
+const GAIN_OK = 3.0;
+const ASSERT_OK = 65.0;
+
+function gainClass(v) {
+  const n = toNum(v);
+  if (!Number.isFinite(n)) return '';
+  return n >= GAIN_OK ? 'pct-pos' : 'pct-neg';
+}
+
+function assertClass(v) {
+  const n = toNum(v);
+  if (!Number.isFinite(n)) return '';
+  return n >= ASSERT_OK ? 'pct-pos' : 'pct-neg';
+}
+
+function normTag(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim().toLowerCase();
+}
+
+function tagClass(v) {
+  const t = normTag(v);
+  if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-low';
+  if (t === 'media' || t === 'medio' || t === 'mid' || t === 'medium') return 'tag-mid';
+  if (t === 'alta' || t === 'alto' || t === 'high') return 'tag-high';
+  return '';
+}
+
+function sideClass(v) {
+  const t = normTag(v);
+  if (t === 'long') return 'side-long';
+  if (t === 'short') return 'side-short';
+  if (t === 'nao entrar' || t === 'não entrar' || t === 'no trade' || t === 'no') return 'side-nao';
+  return '';
+}
+
+// ===== Fetch com cache =====
 async function fetchJson(url, timeoutMs = 8000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetch(url, { cache: "no-store", signal: ctrl.signal });
-    const ct = (r.headers.get("content-type") || "").toLowerCase();
-    if (!ct.includes("application/json")) {
-      throw new Error(r.ok ? "NAO_JSON" : `HTTP_${r.status}`);
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'accept': 'application/json' },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const err = new Error(`http_${res.status}`);
+      err.status = res.status;
+      throw err;
     }
-    const j = await r.json();
-    // Mesmo se HTTP != 200, se veio JSON devolvemos para a UI mostrar o erro.
-    if (!r.ok && j && typeof j === "object" && !("_http" in j)) j._http = r.status;
-    return j;
+    return await res.json();
   } finally {
     clearTimeout(t);
   }
 }
 
-async function fetchJsonAny(urls, timeoutMs = 8000) {
+async function fetchWithFallback(paths) {
   let lastErr = null;
-  for (const url of urls) {
+  for (const p of paths) {
     try {
-      return await fetchJson(url, timeoutMs);
+      return await fetchJson(`${p}?_=${CACHE_BUST}`);
     } catch (e) {
       lastErr = e;
     }
@@ -32,220 +157,96 @@ async function fetchJsonAny(urls, timeoutMs = 8000) {
   throw lastErr || new Error('fetch_error');
 }
 
-function apiUrls(path) {
-  // tenta primeiro /api/... e depois sem /api (para evitar 404)
-  const p = path.startsWith('/') ? path : `/${path}`;
-  if (p.startsWith('/api/')) return [p, p.replace(/^\/api\//, '/')];
-  return [`/api${p}`, p];
+const mem = {
+  full: { at: 0, data: null },
+  top10: { at: 0, data: null },
+};
+
+const CACHE_TTL_MS = 60_000;
+
+async function load(kind) {
+  const slot = mem[kind];
+  const age = Date.now() - slot.at;
+  if (slot.data && age < CACHE_TTL_MS) return { ok: true, source: 'cache', raw: slot.data };
+
+  const urlList = (kind === 'top10')
+    ? ['/api/top10', '/top10']
+    : ['/api/pro', '/pro'];
+
+  const json = await fetchWithFallback(urlList);
+  slot.at = Date.now();
+  slot.data = json;
+  return { ok: true, source: 'live', raw: json };
 }
 
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
-}
-
-function isNil(v){ return v === null || v === undefined || v === ""; }
-
-function fmtPrice(v){
-  if (isNil(v)) return "-";
-  const n = Number(v);
-  return isFinite(n) ? n.toFixed(3) : "-";
-}
-function fmtPct(v){
-  if (isNil(v)) return "-";
-  const n = Number(v);
-  return isFinite(n) ? n.toFixed(2) + "%" : "-";
-}
-function fmtTxt(v){
-  return isNil(v) ? "-" : String(v);
-}
-
-function sideClass(v){
-  const s = String(v||"").toUpperCase();
-  if (s === "LONG") return "side-long";
-  if (s === "SHORT") return "side-short";
-  return "side-nao";
-}
-function pctClass(v){
-  const n = Number(v);
-  if (!isFinite(n)) return "";
-  return n >= 0 ? "pct-pos" : "pct-neg";
-}
-
-// ASSERT%: cor por qualidade (não por sinal)
-function assertClass(v){
-  const n = Number(v);
-  if (!isFinite(n)) return "";
-  if (n >= 65) return "pct-pos";     // verde
-  if (n >= 50) return "pct-mid";     // amarelo
-  return "pct-neg";                  // vermelho
-}
-
-function tagClass(v){
-  const s = String(v||"").toUpperCase();
-  if (s.includes("ALTA") || s === "HIGH") return "tag-high";
-  if (s.includes("MEDIA") || s.includes("MÉDIA") || s === "MEDIUM") return "tag-mid";
-  if (s.includes("BAIXA") || s === "LOW") return "tag-low";
-  return "tag-unk";
-}
-
-const COLS_FULL = [
-  ["PAR","PAR"],
-  ["SIDE","SIDE"],
-  ["ENTRADA","ENTRADA"],
-  ["ATUAL","ATUAL"],
-  ["ALVO","ALVO"],
-  ["GANHO_PCT","GANHO %"],
-  ["ASSERT_PCT","ASSERT %"],
-  ["PRAZO","PRAZO"],
-  ["ZONA","ZONA"],
-  ["RISCO","RISCO"],
-  ["PRIORIDADE","PRIORIDADE"],
-  ["DATA","DATA"],
-  ["HORA","HORA"],
-];
-
-const COLS_TOP10 = COLS_FULL;
-function getErrEl(){
-  return document.getElementById("err") || document.getElementById("offline");
-}
-function showErr(msg){
-  const el = getErrEl();
-  if(!el) return;
+// ===== UI =====
+function setStatus(msg, isErr = false) {
+  const el = q('#status');
+  if (!el) return;
   el.textContent = msg;
-  // HTML atual usa display via classe; então só garante que aparece.
-  el.style.display = "block";
-}
-function hideErr(){
-  const el = getErrEl();
-  if(!el) return;
-  el.textContent = "";
-  el.style.display = "none";
+  el.style.display = msg ? 'block' : 'none';
+  el.classList.toggle('err', !!isErr);
 }
 
-function setBadges(meta){
-  const upd = document.getElementById("upd");
-  const cnt = document.getElementById("cnt");
-  const src = document.getElementById("src");
-  const badge = document.getElementById("meta");
-
-  const updText = meta && meta.updated_brt ? `Atualizado (BRT): ${meta.updated_brt}` : "Atualizado (BRT): -";
-  const cntText = `Itens: ${meta && meta.count !== undefined ? meta.count : 0}`;
-  const srcText = meta && meta.source ? `Fonte: ${meta.source}` : "Fonte: -";
-
-  if (upd) upd.textContent = updText;
-  if (cnt) cnt.textContent = cntText;
-  if (src) src.textContent = srcText;
-  if (badge) badge.textContent = `${updText} • ${cntText} • ${srcText}`;
+function setBadges(info) {
+  const el = q('#badges');
+  if (!el) return;
+  // Opcional: pode esconder esta faixa se quiser.
+  const { updatedBrt, count, source } = info;
+  el.textContent = `Atualizado (BRT): ${updatedBrt} • Itens: ${count} • Fonte: ${source}`;
 }
 
-function renderRows(tbody, items, cols, meta){
-  if(!items || !items.length){
-    tbody.innerHTML = "";
-    return;
-  }
+function renderTable(kind, items) {
+  const cols = (kind === 'top10') ? COLS_TOP10 : COLS_FULL;
+  const tbody = q('#tbl tbody');
+  if (!tbody) return;
 
-  // fallback DATA/HORA a partir do updated_brt (se vier)
-  let fbDate = null, fbTime = null;
-  const ub = meta && meta.updated_brt ? String(meta.updated_brt) : "";
-  const m = ub.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/);
-  if (m){ fbDate = m[1]; fbTime = m[2]; }
+  const rows = Array.isArray(items) ? items : [];
+  const html = rows.map(it => {
+    return '<tr>' + cols.map(([_, key]) => {
+      const raw = (it && typeof it === 'object') ? it[key] : undefined;
+      let text = '-';
+      let cls = '';
 
-  const rows = items.map(it=>{
-    return "<tr>" + cols.map(([k])=>{
-      let v = it[k];
+      if (key === 'entrada' || key === 'atual' || key === 'alvo') text = fmtPrice(raw);
+      else if (key === 'ganho_pct') { text = fmtPct(raw); cls = gainClass(raw); }
+      else if (key === 'assert_pct') { text = fmtPct(raw); cls = assertClass(raw); }
+      else if (key === 'side') { text = fmtText(raw).toUpperCase(); cls = sideClass(raw); }
+      else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
+      else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
+      else if (key === 'risco') { text = fmtText(raw).toUpperCase(); /* sem cor */ }
+      else if (key === 'data') text = fmtText(raw);
+      else if (key === 'hora') text = fmtText(raw);
+      else text = fmtText(raw);
 
-      if ((k === "DATA" || k === "HORA") && (isNil(v))){
-        v = (k === "DATA") ? fbDate : fbTime;
-      }
+      return `<td class="${cls}">${text}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
 
-      if(k === "SIDE") return `<td class="${sideClass(v)}">${esc(fmtTxt(v))}</td>`;
-
-      if(k === "GANHO_PCT"){
-        const cls = pctClass(v);
-        return `<td class="${cls}">${esc(fmtPct(v))}</td>`;
-      }
-
-      if(k === "ASSERT_PCT"){
-        const cls = assertClass(v);
-        return `<td class="${cls}">${esc(fmtPct(v))}</td>`;
-      }
-
-      if(k === "ENTRADA" || k === "ATUAL" || k === "ALVO"){
-        return `<td>${esc(fmtPrice(v))}</td>`;
-      }
-
-      if(k === "ZONA" || k === "RISCO" || k === "PRIORIDADE"){
-        const cls = tagClass(v);
-        return `<td class="${cls}">${esc(fmtTxt(v))}</td>`;
-      }
-
-      return `<td>${esc(fmtTxt(v))}</td>`;
-    }).join("") + "</tr>";
-  }).join("");
-
-  tbody.innerHTML = rows;
+  tbody.innerHTML = html || '<tr><td colspan="20" style="opacity:.7;padding:18px">Sem dados</td></tr>';
 }
 
+async function boot(kind) {
+  try {
+    setStatus('carregando...');
+    const out = await load(kind);
+    if (!out.ok) throw new Error('load_error');
 
-async function loadFull(){
-  const tbody = document.getElementById("rows");
-  const j = await fetchJson("/api/pro");
-  setBadges(j || {});
+    const raw = out.raw || {};
+    const items = raw.items || raw || [];
 
-  if(!j || !j.ok){
-    const dir = j && j.data_dir ? j.data_dir : "-";
-    const err = j && j.error ? j.error : "sem_dados";
-    showErr(`Sem dados: ${err} (DATA_DIR: ${dir})`);
-    if (tbody) tbody.innerHTML = "";
-    return;
-  }
+    const updatedBrt = (raw && raw.updated_at) ? String(raw.updated_at) : nowBrt();
+    const count = Array.isArray(items) ? items.length : 0;
+    const source = raw.source || out.source;
 
-  hideErr();
-  if (tbody) renderRows(tbody, j.items || [], COLS_FULL, j);
-}
-
-async function loadTop10(){
-  const tbody = document.getElementById("rows");
-
-  // tenta usar top10.json; se não existir, deriva do /api/pro (10 maiores GANHO_PCT)
-  let j = await fetchJson("/api/top10");
-  if(!j || !j.ok || !Array.isArray(j.items) || j.items.length === 0){
-    const j2 = await fetchJson("/api/pro");
-    if(j2 && j2.ok && Array.isArray(j2.items)){
-      const items = [...j2.items].filter(it => !isNil(it.GANHO_PCT));
-      items.sort((a,b)=> (num(b.GANHO_PCT) - num(a.GANHO_PCT)) || (num(b.ASSERT_PCT) - num(a.ASSERT_PCT)));
-      const top = items.slice(0, 10);
-
-      setBadges(Object.assign({}, j2, { count: top.length, source: "DERIVADO_PRO" }));
-      hideErr();
-      if (tbody) renderRows(tbody, top, COLS_TOP10, j2);
-      return;
-    }
-
-    setBadges(j || j2 || {});
-    const dir = (j && j.data_dir) ? j.data_dir : ((j2 && j2.data_dir) ? j2.data_dir : "-");
-    const err = (j && j.error) ? j.error : ((j2 && j2.error) ? j2.error : "sem_dados");
-    showErr(`Sem dados: ${err} (DATA_DIR: ${dir})`);
-    if (tbody) tbody.innerHTML = "";
-    return;
-  }
-
-  setBadges(j || {});
-  hideErr();
-  if (tbody) renderRows(tbody, j.items || [], COLS_TOP10, j);
-}
-
-
-async function boot(kind){
-  try{
-    if(kind === "full") await loadFull();
-    else if(kind === "top10") await loadTop10();
-    else await loadFull();
-  }catch(e){
-    const msg = (e && e.message) ? e.message : "erro";
-    showErr("API indisponível. (" + msg + ")");
+    setBadges({ updatedBrt, count, source });
+    renderTable(kind, items);
+    setStatus('');
+  } catch (e) {
+    console.error(e);
+    setStatus('API indisponivel.', true);
   }
 }
 
-// garante acesso global
+// expor p/ paginas
 window.boot = boot;

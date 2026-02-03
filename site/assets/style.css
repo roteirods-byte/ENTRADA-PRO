@@ -63,10 +63,6 @@ h1{
 .btn:hover{filter:brightness(1.1)}
 .hr{height:1px;background:rgba(255,255,255,.10);margin:14px 0}
 .tableWrap{overflow:auto;border-radius:12px;border:1px solid rgba(255,255,255,.10)}
-
-/* esconder a barra (a rolagem continua funcionando) */
-.tableWrap::-webkit-scrollbar{height:0;width:0}
-.tableWrap{scrollbar-width:none}
 table{border-collapse:collapse;width:100%;min-width:1400px}
 th,td{padding:10px 10px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap}
 th{font-size:12px;letter-spacing:.3px;color:var(--pumpkin);text-align:left;background:rgba(0,0,0,.18);position:sticky;top:0}
@@ -74,16 +70,15 @@ td{font-size:13px;color:var(--text)}
 tr:hover td{background:rgba(255,255,255,.03)}
 .side-long{color:var(--ok);font-weight:800}
 .side-short{color:var(--bad);font-weight:800}
-.side-nao{color:#f0c75e;font-weight:800}
+.side-nao{color:#ffd54f;font-weight:700}
 .pct-pos{color:var(--ok);font-weight:800}
-.pct-mid{color:#f0c75e;font-weight:800}
 .pct-neg{color:var(--bad);font-weight:800}
 .foot{margin-top:10px;color:var(--muted);font-size:12px}
 .err{color:var(--bad);font-weight:700}
 
 
 /* compat: classes usadas nas páginas (full/top10/audit) */
-.container{max-width:1200px;margin:32px auto;padding:0 18px}
+.container{max-width:1600px;margin:32px auto;padding:0 18px}
 .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .brand{display:flex;align-items:center;gap:12px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--pumpkin);box-shadow:0 0 0 4px rgba(255,140,42,.15)}
@@ -91,8 +86,8 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .pill a{color:var(--pumpkin);font-weight:800;text-decoration:none}
 .pill a:hover{text-decoration:underline}
 .h2{margin:0 0 10px 0;color:var(--text);font-weight:800;letter-spacing:.2px}
-.table-wrap{overflow:auto;border-radius:12px;border:1px solid rgba(255,255,255,.10)}
-.table{border-collapse:collapse;width:100%;min-width:1400px}
+.table-wrap{overflow-x:hidden;overflow-y:auto;border-radius:12px;border:1px solid rgba(255,255,255,.10)}
+.table{border-collapse:collapse;width:100%;min-width:0}
 .offline{color:var(--bad);font-weight:800;margin:8px 0 10px 0}
 .cards{margin-top:10px;color:var(--muted);font-size:12px}
 #meta{display:inline-flex}
@@ -102,3 +97,8 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .tag-mid{color:var(--pumpkin);font-weight:800}
 .tag-low{color:var(--ok);font-weight:800}
 .tag-unk{color:var(--muted);font-weight:700}
+
+/* ===== nav simples (apenas 1 botão) ===== */
+.titleRow{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.switch{color:var(--accent);font-weight:900;text-decoration:none}
+.switch:hover{text-decoration:underline}
