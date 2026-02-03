@@ -4,8 +4,9 @@
 const express = require('express');
 
 const app = express();
-app.get("/", (req, res) => res.status(200).send("ok"));
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
+app.get("/api/health", (req, res) => res.status(200).json({ ok: true }));
+app.get("/", (req, res) => res.status(200).send("ok"));
 app.disable('x-powered-by');
 
 // CORS simples (para o painel poder ler a API mesmo se estiver em outro endereço)
