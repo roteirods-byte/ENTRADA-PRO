@@ -6,6 +6,15 @@ const express = require('express');
 const app = express();
 app.disable('x-powered-by');
 
+// CORS simples (para o painel poder ler a API mesmo se estiver em outro endereço)
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // ====== CONFIG ======
 const SERVICE = 'entrada-pro-api';
 const PORT = Number(process.env.PORT || 8080);

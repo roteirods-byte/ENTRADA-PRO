@@ -20,6 +20,25 @@ async function fetchJson(url, timeoutMs = 8000) {
   }
 }
 
+async function fetchJsonAny(urls, timeoutMs = 8000) {
+  let lastErr = null;
+  for (const url of urls) {
+    try {
+      return await fetchJson(url, timeoutMs);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('fetch_error');
+}
+
+function apiUrls(path) {
+  // tenta primeiro /api/... e depois sem /api (para evitar 404)
+  const p = path.startsWith('/') ? path : `/${path}`;
+  if (p.startsWith('/api/')) return [p, p.replace(/^\/api\//, '/')];
+  return [`/api${p}`, p];
+}
+
 function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 }
