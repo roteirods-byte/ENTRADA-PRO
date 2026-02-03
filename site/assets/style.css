@@ -78,7 +78,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
 
 
 /* compat: classes usadas nas páginas (full/top10/audit) */
-.container{max-width:1200px;margin:32px auto;padding:0 18px}
+.container{max-width:95vw;margin:20px auto;padding:0 10px;}
 .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .brand{display:flex;align-items:center;gap:12px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--pumpkin);box-shadow:0 0 0 4px rgba(255,140,42,.15)}
@@ -86,7 +86,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .pill a{color:var(--pumpkin);font-weight:800;text-decoration:none}
 .pill a:hover{text-decoration:underline}
 .h2{margin:0 0 10px 0;color:var(--text);font-weight:800;letter-spacing:.2px}
-.table-wrap{overflow:auto;border-radius:12px;border:1px solid rgba(255,255,255,.10)}
+.table-wrap{overflow-x:hidden;overflow-y:auto;border-radius:12px;border:1px solid rgba(255,255,255,0.08);}
 .table{border-collapse:collapse;width:100%;min-width:1400px}
 .offline{color:var(--bad);font-weight:800;margin:8px 0 10px 0}
 .cards{margin-top:10px;color:var(--muted);font-size:12px}
@@ -97,3 +97,10 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .tag-mid{color:var(--pumpkin);font-weight:800}
 .tag-low{color:var(--ok);font-weight:800}
 .tag-unk{color:var(--muted);font-weight:700}
+
+/* Cores (RISCO) */
+.risco-alto{color:#ff6b6b;font-weight:800;}
+.risco-medio{color:#ffd166;font-weight:800;}
+.risco-baixo{color:#7bd389;font-weight:800;}
+/* abas */
+.tab.active{outline:2px solid rgba(255,255,255,0.35);}

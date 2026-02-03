@@ -1,19 +1,9 @@
-// api/server.js
 'use strict';
 
 const express = require('express');
 
 const app = express();
 app.disable('x-powered-by');
-
-// CORS simples (para o painel poder ler a API mesmo se estiver em outro endereço)
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
 
 // ====== CONFIG ======
 const SERVICE = 'entrada-pro-api';
@@ -62,7 +52,13 @@ async function getCached(key, url) {
   const age = Date.now() - slot.at;
 
   if (slot.data && age < CACHE_TTL_MS) {
-    return { ok: true, source: 'cache', updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
+    return {
+      ok: true,
+      source: 'cache',
+      updated_at: nowUtc(),
+      items: slot.data.items ?? slot.data,
+      raw: slot.data,
+    };
   }
 
   if (!url) {
@@ -75,30 +71,34 @@ async function getCached(key, url) {
     slot.data = json;
     slot.err = null;
 
-    return { ok: true, source: 'spaces', updated_at: nowUtc(), items: json.items ?? json, raw: json };
+    return {
+      ok: true,
+      source: 'spaces',
+      updated_at: nowUtc(),
+      items: json.items ?? json,
+      raw: json,
+    };
   } catch (e) {
     slot.at = Date.now();
     slot.err = e?.code || e?.message || 'fetch_error';
 
+    // se já tem dado antigo, devolve o antigo p/ não quebrar
     if (slot.data) {
-      return { ok: true, source: 'stale_cache', warning: slot.err, updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
+      return {
+        ok: true,
+        source: 'stale_cache',
+        warning: slot.err,
+        updated_at: nowUtc(),
+        items: slot.data.items ?? slot.data,
+        raw: slot.data,
+      };
     }
 
     return { ok: false, error: slot.err };
   }
 }
 
-// ====== ROUTES ======
-app.get('/', (req, res) => {
-  res.status(200).send(
-    `OK: ${SERVICE}\n` +
-    `GET /api/version OR GET /version\n` +
-    `GET /api/pro OR GET /pro\n` +
-    `GET /api/top10 OR GET /top10\n` +
-    `GET /api/health OR GET /health\n`
-  );
-});
-
+// ====== HELPERS (p/ reuso nos atalhos /version /pro /top10 /health) ======
 function versionPayload() {
   return {
     ok: true,
@@ -111,21 +111,44 @@ function versionPayload() {
   };
 }
 
-// version (com e sem /api)
-app.get(['/api/version', '/version'], (req, res) => res.json(versionPayload()));
+// ====== ROUTES ======
+app.get('/', (req, res) => {
+  res.status(200).send(
+    `OK: ${SERVICE}\n` +
+      `GET /api/version OR GET /version\n` +
+      `GET /api/pro OR GET /pro\n` +
+      `GET /api/top10 OR GET /top10\n` +
+      `GET /api/health OR GET /health\n`
+  );
+});
 
-// health (com e sem /api)
-app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true }));
+// version
+app.get('/api/version', (req, res) => res.json(versionPayload()));
+app.get('/version', (req, res) => res.json(versionPayload()));
 
-// pro (com e sem /api)
-app.get(['/api/pro', '/pro'], async (req, res) => {
+// health
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+// pro
+app.get('/api/pro', async (req, res) => {
+  const out = await getCached('pro', PRO_JSON_URL);
+  if (!out.ok) return res.status(500).json(out);
+  return res.json(out);
+});
+app.get('/pro', async (req, res) => {
   const out = await getCached('pro', PRO_JSON_URL);
   if (!out.ok) return res.status(500).json(out);
   return res.json(out);
 });
 
-// top10 (com e sem /api)
-app.get(['/api/top10', '/top10'], async (req, res) => {
+// top10
+app.get('/api/top10', async (req, res) => {
+  const out = await getCached('top10', TOP10_JSON_URL);
+  if (!out.ok) return res.status(500).json(out);
+  return res.json(out);
+});
+app.get('/top10', async (req, res) => {
   const out = await getCached('top10', TOP10_JSON_URL);
   if (!out.ok) return res.status(500).json(out);
   return res.json(out);
