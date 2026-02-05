@@ -20,8 +20,7 @@ function q(sel) { return document.querySelector(sel); }
 const COLS_FULL = [
   ['PAR', 'par'],
   ['SIDE', 'side'],
-  ['ENTRADA', 'entrada'],
-  ['ATUAL', 'atual'],
+   ['ATUAL', 'atual'],
   ['ALVO', 'alvo'],
   ['GANHO %', 'ganho_pct'],
   ['ASSERT %', 'assert_pct'],
@@ -36,8 +35,7 @@ const COLS_FULL = [
 const COLS_TOP10 = [
   ['PAR', 'par'],
   ['SIDE', 'side'],
-  ['ENTRADA', 'entrada'],
-  ['ATUAL', 'atual'],
+   ['ATUAL', 'atual'],
   ['ALVO', 'alvo'],
   ['GANHO %', 'ganho_pct'],
   ['ASSERT %', 'assert_pct'],
