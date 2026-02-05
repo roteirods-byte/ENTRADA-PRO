@@ -164,6 +164,89 @@ app.get(['/api/top10', '/top10'], async (req, res) => {
   return res.json(out);
 });
 
+// ===== AUDITORIA PREÇO FUTUROS (BYBIT LINEAR) =====
+async function fetchJson(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "accept": "application/json" } });
+    const txt = await r.text();
+    let j = null;
+    try { j = JSON.parse(txt); } catch {}
+    return { ok: r.ok, status: r.status, json: j, text: txt };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Bybit v5: category=linear (USDT Perp). Retorna lastPrice/markPrice/indexPrice
+async function bybitLinearTicker(symbol) {
+  const url = `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${encodeURIComponent(symbol)}`;
+  const out = await fetchJson(url);
+  if (!out.ok || !out.json) return { ok:false, url, raw: out };
+  const j = out.json;
+  const row = j?.result?.list?.[0];
+  return {
+    ok: true,
+    url,
+    ts_utc: new Date().toISOString(),
+    symbol,
+    last: row?.lastPrice ? Number(row.lastPrice) : null,
+    mark: row?.markPrice ? Number(row.markPrice) : null,
+    index: row?.indexPrice ? Number(row.indexPrice) : null,
+    raw: j
+  };
+}
+
+// Compara com o valor do painel (top10/pro) no MESMO instante
+app.get("/api/audit/price", async (req, res) => {
+  try {
+    const par = String(req.query.par || "SUI").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const symbol = `${par}USDT`;
+
+    // 1) Bybit Perp ao vivo
+    const bybit = await bybitLinearTicker(symbol);
+
+    // 2) Valor atual que a SUA API está servindo (top10 e pro)
+    //    (usa suas rotas locais já existentes)
+    const base = `${req.protocol}://${req.get("host")}`;
+    const top10Live = await fetchJson(`${base}/api/top10`);
+    const proLive  = await fetchJson(`${base}/api/pro`);
+
+    function pickPrice(payload) {
+      const items = payload?.json?.items || [];
+      const row = items.find(x => String(x.PAR).toUpperCase() === par);
+      return row ? Number(row.ATUAL) : null;
+    }
+
+    const atualTop10 = pickPrice(top10Live);
+    const atualPro   = pickPrice(proLive);
+
+    function diffPct(a, b) {
+      if (!a || !b) return null;
+      return ((a - b) / b) * 100;
+    }
+
+    const ref = bybit?.mark ?? bybit?.last ?? null;
+
+    return res.json({
+      ok: true,
+      par,
+      symbol,
+      now_utc: new Date().toISOString(),
+      bybit,
+      painel: {
+        top10_atual: atualTop10,
+        pro_atual: atualPro,
+        diff_top10_pct: ref && atualTop10 ? diffPct(atualTop10, ref) : null,
+        diff_pro_pct: ref && atualPro ? diffPct(atualPro, ref) : null
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
 // ====== START ======
 app.listen(PORT, () => {
   console.log(`[${SERVICE}] listening on ${PORT} | now=${nowUtc()}`);
