@@ -1,204 +1,256 @@
+// api/server.js
 'use strict';
 
 const express = require('express');
-const cors = require('cors');
+// --- NO CACHE (Spaces -> API) ---
+function noStore(res) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+}
+
+async function fetchJsonNoCache(url) {
+  // cache-bust para derrubar cache de CDN/proxy
+  const u = new URL(url);
+  u.searchParams.set("t", String(Date.now()));
+
+  const r = await fetch(u.toString(), {
+    method: "GET",
+    // Node/undici respeita isso; e os headers ajudam em proxies
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache",
+      "Accept": "application/json",
+    },
+  });
+
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`fetch ${u} -> ${r.status} ${txt.slice(0, 200)}`);
+  }
+  return r.json();
+}
 
 const app = express();
+app.get("/health", (req, res) => res.status(200).json({ ok: true }));
+app.get("/api/health", (req, res) => res.status(200).json({ ok: true }));
+app.get("/", (req, res) => res.status(200).send("ok"));
+app.disable('x-powered-by');
 
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+// CORS simples (para o painel poder ler a API mesmo se estiver em outro endereço)
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
-const PORT = process.env.PORT || 8080;
+// ====== CONFIG ======
+const SERVICE = 'entrada-pro-api';
+const PORT = Number(process.env.PORT || 8080);
+const DATA_DIR = process.env.DATA_DIR || '/workspace/data';
 
-// =============================
-// Config
-// =============================
-const PRO_JSON_URL = process.env.PRO_JSON_URL || '';
-const TOP10_JSON_URL = process.env.TOP10_JSON_URL || '';
+const PRO_JSON_URL = (process.env.PRO_JSON_URL || '').trim();
+const TOP10_JSON_URL = (process.env.TOP10_JSON_URL || '').trim();
 
-// Cache simples (só para /api/pro e /api/top10)
-const CACHE_TTL_MS = 10_000; // 10s
+// cache simples p/ evitar 504 e excesso de chamadas
+const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 60_000);
+
 const cache = {
-  pro: { at: 0, data: null },
-  top10: { at: 0, data: null },
+  pro: { at: 0, data: null, err: null },
+  top10: { at: 0, data: null, err: null },
 };
 
-function nowIso() {
+function nowUtc() {
   return new Date().toISOString();
 }
 
-function normSymbol(par) {
-  // Entrada aceita: "SUI" ou "SUIUSDT"
-  const p = String(par || '').trim().toUpperCase();
-  if (!p) return '';
-  return p.endsWith('USDT') ? p : `${p}USDT`;
-}
+async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
 
-async function fetchJson(url, timeoutMs = 8000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { 'accept': 'application/json' } });
-    const text = await res.text();
-    let json;
-    try { json = JSON.parse(text); } catch { json = { raw: text }; }
-    return { ok: res.ok, status: res.status, json };
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { accept: 'application/json' },
+    });
+
+    if (!res.ok) {
+      const err = new Error(`http_${res.status}`);
+      err.code = `http_${res.status}`;
+      throw err;
+    }
+
+    return await res.json();
   } finally {
     clearTimeout(t);
   }
 }
 
-async function getData(kind) {
-  const slot = cache[kind];
+async function getCached(key, url) {
+  const slot = cache[key];
   const age = Date.now() - slot.at;
+
   if (slot.data && age < CACHE_TTL_MS) {
-    return { ok: true, source: 'cache', updated_at: new Date(slot.at).toISOString(), items: slot.data.items || slot.data };
+    return { ok: true, source: 'cache', updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
   }
 
-  const url = (kind === 'top10') ? TOP10_JSON_URL : PRO_JSON_URL;
   if (!url) {
-    return { ok: false, error: `missing env ${(kind === 'top10') ? 'TOP10_JSON_URL' : 'PRO_JSON_URL'}` };
+    return { ok: false, error: 'url_not_set' };
+  }
+
+  try {
+    const json = await fetchJsonWithTimeout(url, 8000);
+    slot.at = Date.now();
+    slot.data = json;
+    slot.err = null;
+
+    return { ok: true, source: 'spaces', updated_at: nowUtc(), items: json.items ?? json, raw: json };
+  } catch (e) {
+    slot.at = Date.now();
+    slot.err = e?.code || e?.message || 'fetch_error';
+
+    if (slot.data) {
+      return { ok: true, source: 'stale_cache', warning: slot.err, updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
     }
 
-  const r = await fetchJson(url);
-  if (!r.ok) {
-    return { ok: false, error: `fetch failed`, status: r.status, url };
+    return { ok: false, error: slot.err };
   }
+}
 
-  slot.at = Date.now();
-  slot.data = r.json;
+// ====== ROUTES ======
+app.get('/', (req, res) => {
+  res.status(200).send(
+    `OK: ${SERVICE}\n` +
+    `GET /api/version OR GET /version\n` +
+    `GET /api/pro OR GET /pro\n` +
+    `GET /api/top10 OR GET /top10\n` +
+    `GET /api/health OR GET /health\n`
+  );
+});
 
+function versionPayload() {
   return {
     ok: true,
-    source: 'live',
-    updated_at: new Date(slot.at).toISOString(),
-    items: r.json.items || r.json,
+    service: SERVICE,
+    version: process.env.APP_VERSION || 'unknown',
+    now_utc: nowUtc(),
+    data_dir: DATA_DIR,
+    pro_json_url: PRO_JSON_URL ? 'set' : 'missing',
+    top10_json_url: TOP10_JSON_URL ? 'set' : 'missing',
   };
 }
 
-// =============================
-// Routes
-// =============================
-app.get('/api/version', (req, res) => {
-  res.json({
+// version (com e sem /api)
+app.get(['/api/version', '/version'], (req, res) => res.json(versionPayload()));
+
+// health (com e sem /api)
+app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true }));
+
+// pro (com e sem /api)
+app.get(['/api/pro', '/pro'], async (req, res) => {
+  const out = await getCached('pro', PRO_JSON_URL);
+  if (!out.ok) return res.status(500).json(out);
+  return res.json(out);
+});
+
+// top10 (com e sem /api)
+app.get(['/api/top10', '/top10'], async (req, res) => {
+  const out = await getCached('top10', TOP10_JSON_URL);
+  if (!out.ok) return res.status(500).json(out);
+  return res.json(out);
+});
+
+// ===== AUDITORIA PREÇO FUTUROS (BYBIT LINEAR) =====
+async function fetchJson(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "accept": "application/json" } });
+    const txt = await r.text();
+    let j = null;
+    try { j = JSON.parse(txt); } catch {}
+    return { ok: r.ok, status: r.status, json: j, text: txt };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Bybit v5: category=linear (USDT Perp). Retorna lastPrice/markPrice/indexPrice
+async function bybitLinearTicker(symbol) {
+  const url = `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${encodeURIComponent(symbol)}`;
+  const out = await fetchJson(url);
+  if (!out.ok || !out.json) return { ok:false, url, raw: out };
+  const j = out.json;
+  const row = j?.result?.list?.[0];
+  return {
     ok: true,
-    service: 'entrada-pro-api',
-    version: process.env.VERSION || 'unknown',
-    now_utc: nowIso(),
-    data_dir: process.env.DATA_DIR || '/workspace/data',
-    pro_json_url: PRO_JSON_URL ? 'set' : 'missing',
-    top10_json_url: TOP10_JSON_URL ? 'set' : 'missing',
-  });
-});
+    url,
+    ts_utc: new Date().toISOString(),
+    symbol,
+    last: row?.lastPrice ? Number(row.lastPrice) : null,
+    mark: row?.markPrice ? Number(row.markPrice) : null,
+    index: row?.indexPrice ? Number(row.indexPrice) : null,
+    raw: j
+  };
+}
 
-app.get('/api/pro', async (req, res) => {
+// Compara com o valor do painel (top10/pro) no MESMO instante
+app.get("/api/audit/price", async (req, res) => {
   try {
-    const out = await getData('pro');
-    if (!out.ok) return res.status(500).json(out);
-    return res.json(out);
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
-  }
-});
+    const par = String(req.query.par || "SUI").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const symbol = `${par}USDT`;
 
-app.get('/api/top10', async (req, res) => {
-  try {
-    const out = await getData('top10');
-    if (!out.ok) return res.status(500).json(out);
-    return res.json(out);
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
-  }
-});
+    // 1) Bybit Perp ao vivo
+    const bybit = await bybitLinearTicker(symbol);
 
-// AUDITORIA DE PREÇO (FUTUROS PERPÉTUO / LINEAR USDT)
-// URL: /api/audit/price?par=SUI   (ou par=SUIUSDT)
-app.get('/api/audit/price', async (req, res) => {
-  try {
-    const symbol = normSymbol(req.query.par);
-    if (!symbol) return res.status(400).json({ ok: false, error: 'missing par (ex: ?par=SUI)' });
+    // 2) Valor atual que a SUA API está servindo (top10 e pro)
+    //    (usa suas rotas locais já existentes)
+    const base = `${req.protocol}://${req.get("host")}`;
+    const top10Live = await fetchJson(`${base}/api/top10`);
+    const proLive  = await fetchJson(`${base}/api/pro`);
 
-    // BYBIT PERP (linear)
-    const bybitUrl = `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${encodeURIComponent(symbol)}`;
-
-    // BITGET PERP (USDT-FUTURES)
-    const bitgetUrl = `https://api.bitget.com/api/v2/mix/market/symbol-price?productType=USDT-FUTURES&symbol=${encodeURIComponent(symbol)}`;
-
-    const [bybitR, bitgetR] = await Promise.all([
-      fetchJson(bybitUrl, 8000),
-      fetchJson(bitgetUrl, 8000),
-    ]);
-
-    // Parse Bybit
-    let bybit = { ok: false, note: 'no data' };
-    if (bybitR.ok && bybitR.json && bybitR.json.result && Array.isArray(bybitR.json.result.list) && bybitR.json.result.list[0]) {
-      const x = bybitR.json.result.list[0];
-      bybit = {
-        ok: true,
-        symbol: x.symbol,
-        lastPrice: Number(x.lastPrice),
-        markPrice: Number(x.markPrice),
-        indexPrice: Number(x.indexPrice),
-        fundingRate: x.fundingRate != null ? Number(x.fundingRate) : null,
-        nextFundingTime: x.nextFundingTime || null,
-      };
-    } else {
-      bybit = { ok: false, status: bybitR.status, sample: bybitR.json };
+    function pickPrice(payload) {
+      const items = payload?.json?.items || [];
+      const row = items.find(x => String(x.PAR).toUpperCase() === par);
+      return row ? Number(row.ATUAL) : null;
     }
 
-    // Parse Bitget
-    let bitget = { ok: false, note: 'no data' };
-    const bg = bitgetR.json;
-    // Bitget pode vir como {data:[{symbol,price}]} ou {data:{...}} dependendo do endpoint/versão
-    if (bitgetR.ok && bg) {
-      const d = Array.isArray(bg.data) ? bg.data[0] : bg.data;
-      if (d && (d.price != null || d.last != null)) {
-        bitget = {
-          ok: true,
-          symbol: d.symbol || symbol,
-          price: Number(d.price ?? d.last),
-        };
-      } else {
-        bitget = { ok: false, status: bitgetR.status, sample: bg };
-      }
-    } else {
-      bitget = { ok: false, status: bitgetR.status, sample: bg };
+    const atualTop10 = pickPrice(top10Live);
+    const atualPro   = pickPrice(proLive);
+
+    function diffPct(a, b) {
+      if (!a || !b) return null;
+      return ((a - b) / b) * 100;
     }
 
-    // Também mostramos o que está no painel (TOP10) agora, para comparar
-    const top10 = await getData('top10');
-    let painel = null;
-    if (top10.ok && Array.isArray(top10.items)) {
-      const row = top10.items.find(r => String(r.PAR || '').toUpperCase() === symbol.replace('USDT', ''));
-      if (row) {
-        painel = {
-          PAR: row.PAR,
-          ATUAL: row.ATUAL,
-          ENTRADA: row.ENTRADA,
-          ALVO: row.ALVO,
-          updated_at: top10.updated_at,
-          source: top10.source,
-        };
-      }
-    }
+    const ref = bybit?.mark ?? bybit?.last ?? null;
 
     return res.json({
       ok: true,
-      par: symbol.replace('USDT', ''),
+      par,
       symbol,
-      now_utc: nowIso(),
+      now_utc: new Date().toISOString(),
       bybit,
-      bitget,
-      painel,
-      obs: 'Se BYBIT(mark/last) estiver perto da corretora e o painel estiver distante, o problema está no WORKER/ENGINE que gerou o JSON (não no site).',
+      painel: {
+        top10_atual: atualTop10,
+        pro_atual: atualPro,
+        diff_top10_pct: ref && atualTop10 ? diffPct(atualTop10, ref) : null,
+        diff_pro_pct: ref && atualPro ? diffPct(atualPro, ref) : null
+      }
     });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    return res.status(500).json({ ok:false, error: String(e?.message || e) });
   }
 });
 
-app.get('/', (req, res) => res.send('ok'));
-
+// ====== START ======
 app.listen(PORT, () => {
-  console.log(`entrada-pro-api listening on :${PORT}`);
+  console.log(`[${SERVICE}] listening on ${PORT} | now=${nowUtc()}`);
+  console.log(`[${SERVICE}] DATA_DIR=${DATA_DIR}`);
+  console.log(`[${SERVICE}] PRO_JSON_URL=${PRO_JSON_URL ? 'set' : 'missing'}`);
+  console.log(`[${SERVICE}] TOP10_JSON_URL=${TOP10_JSON_URL ? 'set' : 'missing'}`);
 });
