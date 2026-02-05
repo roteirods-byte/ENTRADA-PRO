@@ -234,15 +234,19 @@ async function load(kind) {
   const slot = mem[kind];
   const age = Date.now() - slot.at;
   if (slot.data && age < CACHE_TTL_MS) return { ok: true, source: 'cache', raw: slot.data };
+   
+const urlList = (kind === 'top10')
+  ? ['/api/top10', '/top10']
+  : ['/api/pro', '/pro'];
 
-  const urlList = (kind === 'top10')
-    ? ['/api/top10', '/top10']
-    : ['/api/pro', '/pro'];
+const json = await fetchWithFallback(urlList);
 
-  const json = await fetchWithFallback(urlList);
-  slot.at = Date.now();
-  slot.data = json;
-  return { ok: true, source: 'live', raw: json };
+// ✅ ADICIONE ISTO AQUI
+setLastUpdateBox(json);
+
+slot.at = Date.now();
+slot.data = json;
+return { ok: true, source: 'live', raw: json };
 }
 
 // ===== UI =====
