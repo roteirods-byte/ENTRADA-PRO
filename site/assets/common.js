@@ -249,6 +249,29 @@ slot.data = json;
 return { ok: true, source: 'live', raw: json };
 }
 
+function formatBRTFromIso(iso) {
+  try {
+    const d = new Date(iso);
+    const dt = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      hour12: false
+    }).format(d);
+    return dt.replace(',', '');
+  } catch (e) {
+    return null;
+  }
+}
+
+function setLastUpdateBox(json) {
+  const el = document.getElementById('lastUpdateBox');
+  if (!el) return;
+  const iso = json && (json.updated_at || json.now_utc);
+  const brt = iso ? formatBRTFromIso(iso) : null;
+  el.textContent = 'Última atualização: ' + (brt || '--/--/---- --:--');
+}
+
 // ===== UI =====
 function setStatus(msg, isErr = false) {
   const el = q('#status');
