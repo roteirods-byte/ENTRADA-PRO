@@ -2,6 +2,36 @@
 'use strict';
 
 const express = require('express');
+// --- NO CACHE (Spaces -> API) ---
+function noStore(res) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+}
+
+async function fetchJsonNoCache(url) {
+  // cache-bust para derrubar cache de CDN/proxy
+  const u = new URL(url);
+  u.searchParams.set("t", String(Date.now()));
+
+  const r = await fetch(u.toString(), {
+    method: "GET",
+    // Node/undici respeita isso; e os headers ajudam em proxies
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache",
+      "Accept": "application/json",
+    },
+  });
+
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`fetch ${u} -> ${r.status} ${txt.slice(0, 200)}`);
+  }
+  return r.json();
+}
 
 const app = express();
 app.get("/health", (req, res) => res.status(200).json({ ok: true }));
