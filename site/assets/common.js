@@ -330,3 +330,29 @@ async function boot(kind) {
 
 // expor p/ paginas
 window.boot = boot;
+
+function formatBRTFromIso(iso) {
+  try {
+    const d = new Date(iso);
+    const dt = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      hour12: false
+    }).format(d);
+    // dt vem tipo "05/02/2026 16:39"
+    return dt.replace(',', '');
+  } catch (e) {
+    return null;
+  }
+}
+
+function setLastUpdateBox(json) {
+  const el = document.getElementById('lastUpdateBox');
+  if (!el) return;
+
+  const iso = json && (json.updated_at || json.now_utc);
+  const brt = iso ? formatBRTFromIso(iso) : null;
+  el.textContent = 'Última atualização: ' + (brt || '--/--/---- --:--');
+}
+
