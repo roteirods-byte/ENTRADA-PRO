@@ -1,137 +1,150 @@
-# worker/worker_pro.py  (ATUAL AO VIVO - BYBIT PERP MARK)
+# worker/worker_pro.py  (GERADOR COMPLETO - SINAIS + COLUNAS)
 from __future__ import annotations
 
-import json
 import os
 import time
 from pathlib import Path
-from datetime import datetime, timezone
-from urllib.request import urlopen, Request
+from typing import Dict, List, Optional
 
-from engine.config import COINS, DATA_DIR, now_brt_str
+from engine.config import COINS, DATA_DIR, GAIN_MIN_PCT, now_utc_iso, now_brt_str
+from engine.exchanges import binance_mark_last, binance_klines, bybit_mark_last
+from engine.compute import build_signal
+from engine.io import atomic_write_json
 
+# arquivos de saída (lidos pela API / painéis)
 OUT_FILE = Path(os.getenv("PRO_JSON", str(Path(DATA_DIR) / "pro.json")))
+TOP10_FILE = Path(os.getenv("TOP10_JSON", str(Path(DATA_DIR) / "top10.json")))
 
-# intervalo (segundos). Se não existir variável, usa 60s.
-INTERVAL_S = int(os.getenv("WORKER_INTERVAL_S", "60"))
-
-BYBIT_TICKERS_URL = "https://api.bybit.com/v5/market/tickers?category=linear"  # USDT Perp (linear)
+# intervalo (segundos). Padrão: 300 (5 min)
+INTERVAL_S = int(os.getenv("WORKER_INTERVAL_S", "300"))
 
 def log(msg: str) -> None:
     print(f"[WORKER_PRO] {msg}", flush=True)
 
-def http_get_json(url: str, timeout: int = 10) -> dict:
-    req = Request(url, headers={"accept": "application/json", "user-agent": "entrada-pro-worker"})
-    with urlopen(req, timeout=timeout) as r:
-        data = r.read().decode("utf-8", errors="replace")
-    return json.loads(data)
+def _sym(par: str) -> str:
+    # FUTURO PERP USDT (linear)
+    return f"{par.upper()}USDT"
 
-def fetch_bybit_mark_map() -> dict[str, float]:
-    """
-    Retorna dict: {"BATUSDT": 0.11757, ...} usando markPrice do PERP (linear).
-    """
-    out: dict[str, float] = {}
-    j = http_get_json(BYBIT_TICKERS_URL, timeout=10)
-
-    # resposta padrão do V5: { "retCode":0, "result": { "list":[...] } }
-    result = (j or {}).get("result") or {}
-    lst = result.get("list") or []
-
-    for it in lst:
-        sym = str(it.get("symbol", "")).upper().strip()
-        mp = it.get("markPrice")
-        try:
-            if sym and mp is not None:
-                out[sym] = float(mp)
-        except:
-            pass
-
-    return out
-
-def load_existing_payload() -> dict:
-    """
-    Carrega o pro.json existente, para NÃO quebrar o formato atual do painel.
-    """
-    if not OUT_FILE.exists():
-        return {"ok": True, "items": []}
-
+def _safe_mark(symbol: str) -> tuple[Optional[float], str]:
+    # tenta Binance primeiro, depois Bybit
     try:
-        txt = OUT_FILE.read_text(encoding="utf-8")
-        return json.loads(txt) if txt else {"ok": True, "items": []}
+        j = binance_mark_last(symbol)
+        return float(j["mark"]), "BINANCE"
     except Exception:
-        return {"ok": True, "items": []}
+        pass
+    try:
+        j = bybit_mark_last(symbol)
+        return float(j["mark"]), "BYBIT"
+    except Exception:
+        return None, "NONE"
 
-def save_payload(payload: dict) -> None:
-    OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OUT_FILE.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+def _safe_ohlc(symbol: str) -> Optional[List[List[float]]]:
+    # usa 4h (painel Swing/PRO)
+    try:
+        return binance_klines(symbol, interval="4h", limit=220)
+    except Exception:
+        return None
 
-def symbol_usdt(par: str) -> str:
-    # Ex: "BAT" -> "BATUSDT"
-    p = (par or "").strip().upper()
-    if p.endswith("USDT"):
-        return p
-    return f"{p}USDT"
+def build_payload() -> Dict:
+    updated_at = now_utc_iso()
+    now_brt = now_brt_str()
 
-def update_items_with_live_price(payload: dict, mark_map: dict[str, float]) -> tuple[int, int]:
-    """
-    Atualiza ATUAL pelo MARK do PERP (linear).
-    Mantém todo o resto igual.
-    """
-    items = payload.get("items")
-    if not isinstance(items, list):
-        return (0, 0)
-
+    items = []
     ok_count = 0
     miss_count = 0
 
-    for it in items:
-        if not isinstance(it, dict):
-            continue
+    for par in COINS:
+        symbol = _sym(par)
+        mark, src = _safe_mark(symbol)
 
-        # aceita PAR (modelo atual) ou coin (modelo antigo)
-        par = it.get("PAR") or it.get("par") or it.get("coin")
-        if not par:
-            continue
-
-        sym = symbol_usdt(str(par))
-        mp = mark_map.get(sym)
-
-        if mp is None:
+        if mark is None:
             miss_count += 1
+            items.append({
+                "par": par,
+                "side": "NÃO ENTRAR",
+                "atual": 0.0,
+                "alvo": 0.0,
+                "ganho_pct": 0.0,
+                "assert_pct": 0.0,
+                "prazo": "-",
+                "zona": "ALTA",
+                "risco": "ALTO",
+                "prioridade": "BAIXA",
+                "price_source": src,
+            })
             continue
 
-        # grava ATUAL em float (sem formatar; o site formata)
-        it["ATUAL"] = float(mp)
+        ohlc = _safe_ohlc(symbol)
+        if not ohlc:
+            miss_count += 1
+            items.append({
+                "par": par,
+                "side": "NÃO ENTRAR",
+                "atual": float(mark),
+                "alvo": float(mark),
+                "ganho_pct": 0.0,
+                "assert_pct": 0.0,
+                "prazo": "-",
+                "zona": "ALTA",
+                "risco": "ALTO",
+                "prioridade": "BAIXA",
+                "price_source": src,
+            })
+            continue
 
-        # opcional: marca a fonte (não atrapalha)
-        it["PRICE_SOURCE"] = "MARK"
+        sig = build_signal(par=par, ohlc=ohlc, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT))
 
+        items.append({
+            "par": sig.par,
+            "side": sig.side,
+            "atual": float(sig.atual),
+            "alvo": float(sig.alvo),
+            "ganho_pct": float(sig.ganho_pct),
+            "assert_pct": float(sig.assert_pct),
+            "prazo": sig.prazo,
+            "zona": sig.zona,
+            "risco": sig.risco,
+            "prioridade": sig.prioridade,
+            "price_source": src,
+        })
         ok_count += 1
 
-    return (ok_count, miss_count)
+    # ordena por par (alfabético)
+    items.sort(key=lambda x: (x.get("par") or ""))
 
-def main() -> None:
-    log(f"START | OUT_FILE={OUT_FILE} | INTERVAL_S={INTERVAL_S} | COINS={len(COINS)}")
+    payload = {
+        "ok": True,
+        "source": "local",
+        "updated_at": updated_at,
+        "now_brt": now_brt,
+        "items": items,
+    }
 
+    # top10: pega só quem tem sinal (LONG/SHORT) e ordena por ganho_pct
+    sigs = [it for it in items if it.get("side") in ("LONG", "SHORT")]
+    sigs.sort(key=lambda x: float(x.get("ganho_pct") or 0.0), reverse=True)
+    top10 = {
+        "ok": True,
+        "source": "local",
+        "updated_at": updated_at,
+        "now_brt": now_brt,
+        "items": sigs[:10],
+    }
+
+    log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
+    return payload, top10
+
+def main_loop() -> None:
+    log(f"START | OUT_FILE={OUT_FILE} | TOP10_FILE={TOP10_FILE} | INTERVAL_S={INTERVAL_S} | COINS={len(COINS)}")
     while True:
         try:
-            payload = load_existing_payload()
-
-            # atualiza carimbos de tempo
-            payload["ok"] = True
-            payload["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            payload["now_brt"] = now_brt_str()
-
-            mark_map = fetch_bybit_mark_map()
-            ok_count, miss_count = update_items_with_live_price(payload, mark_map)
-
-            save_payload(payload)
-            log(f"UPDATED | ATUAL(MARK) ok={ok_count} miss={miss_count}")
-
+            payload, top10 = build_payload()
+            atomic_write_json(OUT_FILE, payload)
+            atomic_write_json(TOP10_FILE, top10)
+            log("WROTE pro.json + top10.json")
         except Exception as e:
             log(f"ERROR: {type(e).__name__}: {e}")
-
         time.sleep(INTERVAL_S)
 
 if __name__ == "__main__":
-    main()
+    main_loop()
