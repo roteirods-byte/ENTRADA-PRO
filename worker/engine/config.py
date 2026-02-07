@@ -19,9 +19,13 @@ REPO_DIR = WORKER_DIR.parent                         # /app
 
 # --- defaults (39 moedas) ---
 DEFAULT_COINS = [
-    "AAVE","ADA","APT","ARB","ATOM","AVAX","AXS","BCH","BNB","BTC","DOGE","DOT","ETH",
-    "FET","FIL","FLUX","ICP","INJ","LDO","LINK","LTC","NEAR","OP","PEPE","POL","RATS",
-    "RENDER","RUNE","SEI","SHIB","SOL","SUI","TIA","TNSR","TON","TRX","UNI","WIF","XRP"
+    "AAVE","ADA","APE","APT","AR","ARB","ATOM","AVAX","AXS","BAT","BCH","BLUR",
+    "BNB","BONK","BTC","COMP","CRV","DASH","DENT","DGB","DOGE","DOT","EGLD","EOS",
+    "ETC","ETH","FET","FIL","FLOKI","FLOW","FTM","GALA","GLM","GRT","HBAR","ICP",
+    "IMX","INJ","IOST","KAS","KAVA","KSM","LINK","LTC","MANA","MATIC","MKR","NEAR",
+    "NEO","OMG","ONT","OP","ORDI","PEPE","QNT","QTUM","RNDR","ROSE","RUNE","SAND",
+    "SEI","SHIB","SNX","SOL","STX","SUI","SUSHI","THETA","TIA","TRX","UNI","VET",
+    "XEM","XLM","XRP","XVS","ZEC","ZRX"
 ]
 
 

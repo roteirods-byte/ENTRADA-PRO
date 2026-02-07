@@ -3,7 +3,7 @@ CHECKLIST DE REVISAO (ANTES DE ENVIAR)
 1) Nao existe pagina/aba AUDITORIA
 2) Nao existe coluna PRICE
 3) Nao existe coluna MODO
-4) TOP10 nao mostra DATA/HORA (fica mais limpo)
+4) TOP10 mostra DATA/HORA (cópia do FULL)
 5) Cores:
    - GANHO %: >= 3 verde | < 3 vermelho
    - ASSERT %: >= 65 verde | < 65 vermelho

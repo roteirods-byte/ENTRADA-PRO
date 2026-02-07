@@ -1,9 +1,12 @@
 # ENTRADA-PRO (PRO - Perp Futures, MARK PRICE)
 
 ## O que entrega
-- `data/pro.json` (77 moedas)
-- `data/top10.json` (Top10 por ASSERT% desc, depois GANHO% desc)
+- `data/pro.json` (78 moedas)
+- `data/top10.json` (Top10 por GANHO% desc — extraído do FULL)
 - `data/audit.json` (auditoria + integridade)
+
+## Moedas (78 • ordem alfabética)
+AAVE, ADA, APE, APT, AR, ARB, ATOM, AVAX, AXS, BAT, BCH, BLUR, BNB, BONK, BTC, COMP, CRV, DASH, DENT, DGB, DOGE, DOT, EGLD, EOS, ETC, ETH, FET, FIL, FLOKI, FLOW, FTM, GALA, GLM, GRT, HBAR, ICP, IMX, INJ, IOST, KAS, KAVA, KSM, LINK, LTC, MANA, MATIC, MKR, NEAR, NEO, OMG, ONT, OP, ORDI, PEPE, QNT, QTUM, RNDR, ROSE, RUNE, SAND, SEI, SHIB, SNX, SOL, STX, SUI, SUSHI, THETA, TIA, TRX, UNI, VET, XEM, XLM, XRP, XVS, ZEC, ZRX
 
 ## Regras fixas
 - SIDE: `LONG` (comprado) | `SHORT` (vendido) | `NÃO ENTRAR`
