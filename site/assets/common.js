@@ -6,7 +6,7 @@
      * GANHO %: >= 3% verde, < 3% vermelho
      * ASSERT %: >= 65% verde, < 65% vermelho
      * SIDE: LONG verde, SHORT vermelho, NAO ENTRAR amarelo
-     * ZONA / PRIORIDADE: BAIXA verde, MEDIA laranja, ALTA vermelho
+     * ZONA: BAIXA verde, MEDIA laranja, ALTA vermelho | PRIORIDADE: ALTA verde, MEDIA laranja, BAIXA vermelho
    - Sem pagina extra
 */
 
@@ -182,6 +182,15 @@ function tagClass(v) {
   return '';
 }
 
+// PRIORIDADE: quanto mais ALTA, melhor (verde).
+function prioClass(v) {
+  const x = (v ?? '').toString().trim().toLowerCase();
+  if (x in {alta:1, alto:1, high:1}) return 'tag-low';
+  if (x in {media:1, média:1, medio:1, médio:1, mid:1}) return 'tag-mid';
+  if (x in {baixa:1, baixo:1, low:1}) return 'tag-high';
+  return 'tag-na';
+}
+
 function sideClass(v) {
   const t = normTag(v);
   if (t === 'long') return 'side-long';
@@ -306,7 +315,7 @@ function renderTable(kind, items) {
       else if (key === 'side') { text = fmtText(raw).toUpperCase(); cls = sideClass(raw); }
       else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
       else if (key === 'risco') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
-      else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
+      else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = prioClass(raw); }
       else if (key === 'data') text = fmtText(raw);
       else if (key === 'hora') text = fmtText(raw);
       else text = fmtText(raw);
