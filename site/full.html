@@ -24,18 +24,6 @@
 
     <div class="card" style="margin-top:14px">
       <div id="status" class="offline"></div>
-      <div class="noteBox" style="margin:14px 0 10px; padding:16px 18px; border:1px solid rgba(255,255,255,.18); border-radius:14px; background:rgba(0,0,0,.08)">
-        <div style="color:#ff8a2a; font-weight:700; margin-bottom:8px">Significado das colunas</div>
-        <div style="line-height:1.5; font-size:14px">
-          <b style="color:#ff8a2a">ASSERT %</b>: chance histórica de acerto do sinal (quanto maior, melhor).&nbsp;&nbsp;
-          <b style="color:#ff8a2a">PRAZO</b>: tempo estimado para o alvo (ex: 4-6h).&nbsp;&nbsp;
-          <b style="color:#ff8a2a">ZONA</b>: qualidade/segurança da oportunidade (BAIXA=melhor, MÉDIA=atenção, ALTA=pior).&nbsp;&nbsp;
-          <b style="color:#ff8a2a">RISCO</b>: nível de risco do trade (BAIXO=melhor, MÉDIO=atenção, ALTO=pior).&nbsp;&nbsp;
-          <b style="color:#ff8a2a">PRIORIDADE</b>: ordem de preferência (ALTA=melhor, MÉDIA=atenção, BAIXA=pior).
-        </div>
-        <div style="margin-top:12px; padding:10px 12px; border:1px solid rgba(0,255,150,.35); background:rgba(0,255,150,.10); border-radius:12px; font-weight:800; letter-spacing:.2px">⚠️ SÓ ENTRAR NA OPERAÇÃO COM TODAS AS INDICAÇÕES NA COR VERDE.</div>
-      </div>
-
       <div class="table-wrap">
         <table class="table" id="tbl">
           <thead>
@@ -62,7 +50,7 @@
     </div>
   </div>
 
-  <script src="./assets/common.js"></script>
+  <script src="./assets/common.js?v=priofix4"></script>
   <script>
     window.addEventListener('load', () => {
       boot('full');
