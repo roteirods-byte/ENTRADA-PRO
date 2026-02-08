@@ -6,7 +6,7 @@
      * GANHO %: >= 3% verde, < 3% vermelho
      * ASSERT %: >= 65% verde, < 65% vermelho
      * SIDE: LONG verde, SHORT vermelho, NAO ENTRAR amarelo
-     * ZONA/RISCO: BAIXA(BAIXO)=verde, MÉDIA(MÉDIO)=laranja, ALTA(ALTO)=vermelho • PRIORIDADE: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho
+     * ZONA / PRIORIDADE: BAIXA verde, MEDIA laranja, ALTA vermelho
    - Sem pagina extra
 */
 
@@ -182,16 +182,17 @@ function tagClass(v) {
   return '';
 }
 
-
+// PRIORIDADE é o inverso de ZONA/RISCO: quanto mais alta, melhor.
+// - ALTA  => verde
+// - MÉDIA => laranja
+// - BAIXA => vermelho
 function priorityClass(v) {
-  // PRIORIDADE: quanto mais ALTA, melhor (verde)
   const t = normTag(v);
-  if (t === 'alta' || t === 'alto' || t === 'high') return 'tag-low';   // verde
-  if (t === 'media' || t === 'medio' || t === 'mid' || t === 'medium') return 'tag-mid'; // laranja
-  if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-high'; // vermelho
+  if (t === 'alta' || t === 'alto' || t === 'high') return 'tag-low';
+  if (t === 'media' || t === 'medio' || t === 'mid' || t === 'medium') return 'tag-mid';
+  if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-high';
   return '';
 }
-
 
 function sideClass(v) {
   const t = normTag(v);
@@ -317,7 +318,7 @@ function renderTable(kind, items) {
       else if (key === 'side') { text = fmtText(raw).toUpperCase(); cls = sideClass(raw); }
       else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
       else if (key === 'risco') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
-      else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
+      else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = priorityClass(raw); }
       else if (key === 'data') text = fmtText(raw);
       else if (key === 'hora') text = fmtText(raw);
       else text = fmtText(raw);
