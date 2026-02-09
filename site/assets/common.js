@@ -6,7 +6,7 @@
      * GANHO %: >= 3% verde, < 3% vermelho
      * ASSERT %: >= 65% verde, < 65% vermelho
      * SIDE: LONG verde, SHORT vermelho, NAO ENTRAR amarelo
-     * ZONA / PRIORIDADE: BAIXA verde, MEDIA laranja, ALTA vermelho
+     * ZONA: BAIXA=verde, MÉDIA=laranja, ALTA=vermelho | PRIORIDADE: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho
    - Sem pagina extra
 */
 
@@ -187,11 +187,11 @@ function tagClass(v) {
 // - MÉDIA => laranja
 // - BAIXA => vermelho
 function priorityClass(v) {
-  const t = normTag(v);
-  if (t === 'alta' || t === 'alto' || t === 'high') return 'tag-low';
-  if (t === 'media' || t === 'medio' || t === 'mid' || t === 'medium') return 'tag-mid';
-  if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-high';
-  return '';
+  // PRIORIDADE: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho
+  v = fmtText(v).toUpperCase();
+  if (v === 'ALTA') return 'tag-low';          // verde (melhor)
+  if (v === 'MÉDIA' || v === 'MEDIA') return 'tag-mid'; // laranja
+  return 'tag-high';                           // vermelho (pior)
 }
 
 function sideClass(v) {

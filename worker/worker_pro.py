@@ -45,6 +45,56 @@ def _safe_ohlc(symbol: str) -> Optional[List[List[float]]]:
     except Exception:
         return None
 
+# ===== TOP10 (ranking por pontuação de cores) =====
+def _pts_zona(z: str) -> int:
+    z = str(z or "").upper()
+    if z == "BAIXA":
+        return 3
+    if z in ("MÉDIA", "MEDIA"):
+        return 2
+    return 1  # ALTA
+
+def _pts_risco(r: str) -> int:
+    r = str(r or "").upper()
+    if r == "BAIXO":
+        return 3
+    if r in ("MÉDIO", "MEDIO"):
+        return 2
+    return 1  # ALTO
+
+def _pts_prioridade(p: str) -> int:
+    p = str(p or "").upper()
+    if p == "ALTA":
+        return 3
+    if p in ("MÉDIA", "MEDIA"):
+        return 2
+    return 1  # BAIXA
+
+def _top10_select(items):
+    """TOP10 = ranking (não é sinal de operação).
+    Regras:
+      - entra no ranking se SIDE for LONG/SHORT e GANHO% >= GAIN_MIN_PCT
+      - pontuação = ZONA + RISCO + PRIORIDADE (verde=3, amarelo=2, vermelho=1)
+      - desempate: maior ASSERT%, depois maior GANHO%
+    """
+    cand = []
+    for it in items:
+        if it.get("side") not in ("LONG", "SHORT"):
+            continue
+
+        ganho = float(it.get("ganho_pct") or 0.0)
+        if ganho < float(GAIN_MIN_PCT):
+            continue
+
+        pts = _pts_zona(it.get("zona")) + _pts_risco(it.get("risco")) + _pts_prioridade(it.get("prioridade"))
+        ass = float(it.get("assert_pct") or 0.0)
+        cand.append((pts, ass, ganho, it))
+
+    # ordena: mais pontos primeiro; depois maior assert; depois maior ganho
+    cand.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
+    return [t[3] for t in cand[:10]]
+
+
 def build_payload() -> Dict:
     updated_at = now_utc_iso()
     now_brt = now_brt_str()
@@ -119,18 +169,15 @@ def build_payload() -> Dict:
         "now_brt": now_brt,
         "items": items,
     }
-
-    # top10: pega só quem tem sinal (LONG/SHORT) e ordena por ganho_pct
-    sigs = [it for it in items if it.get("side") in ("LONG", "SHORT")]
-    sigs.sort(key=lambda x: float(x.get("ganho_pct") or 0.0), reverse=True)
+    # top10: NOVA REGRA (ranking por pontuação de cores)
+    top_items = _top10_select(items)
     top10 = {
         "ok": True,
         "source": "local",
         "updated_at": updated_at,
         "now_brt": now_brt,
-        "items": sigs[:10],
+        "items": top_items,
     }
-
     log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
     return payload, top10
 
