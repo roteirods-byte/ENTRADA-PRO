@@ -94,18 +94,24 @@ def classify_levels(atr_pct: float, assert_pct: float, gain_pct: float, strength
         risco="MÉDIO"
     else:
         risco="BAIXO"
-    # prioridade
-    score = 0.7*assert_pct + 0.3*min(100.0, gain_pct*10)
+
+    # prioridade (mais coerente: mistura ASSERT + GANHO e penaliza risco sem exagero)
+    # ganho_pct*10: 3% vira 30, 6% vira 60, etc.
+    score = 0.6*assert_pct + 0.4*min(100.0, gain_pct*10)
+
     if risco=="ALTO":
-        score -= 10
+        score -= 6
     elif risco=="MÉDIO":
-        score -= 4
-    if score >= 75:
+        score -= 2
+
+    # faixas (para não ficar tudo BAIXA)
+    if score >= 60:
         prioridade="ALTA"
-    elif score >= 62:
+    elif score >= 52:
         prioridade="MÉDIA"
     else:
         prioridade="BAIXA"
+
     # zona (simplificada)
     if strength >= 0.65 and atr_pct <= 0.04:
         zona="BAIXA"
@@ -113,6 +119,7 @@ def classify_levels(atr_pct: float, assert_pct: float, gain_pct: float, strength
         zona="MÉDIA"
     else:
         zona="ALTA"
+
     return risco, prioridade, zona
 
 def build_signal(par: str, ohlc: List[List[float]], mark_price: float, gain_min_pct: float) -> Signal:

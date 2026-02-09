@@ -174,6 +174,16 @@ function normTag(s) {
     .trim().toLowerCase();
 }
 
+function priorityClass(v) {
+  const t = normTag(v);
+  // PRIORIDADE: ALTA=verde, MEDIA=laranja, BAIXA=vermelho
+  if (t === 'alta' || t === 'alto' || t === 'high') return 'tag-low';
+  if (t === 'media' || t === 'medio' || t === 'mid' || t === 'medium') return 'tag-mid';
+  if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-high';
+  return '';
+}
+
+
 function tagClass(v) {
   const t = normTag(v);
   if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-low';

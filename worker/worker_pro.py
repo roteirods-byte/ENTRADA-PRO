@@ -169,7 +169,56 @@ def build_payload() -> Dict:
         "now_brt": now_brt,
         "items": items,
     }
+<<<<<<< Updated upstream
     # top10: NOVA REGRA (ranking por pontuação de cores)
+=======
+    # top10: NOVA REGRA (PONTOS/CORES)
+    # - entra no ranking: LONG/SHORT e GANHO >= GAIN_MIN_PCT
+    # - ordena: PONTOS(desc) -> ASSERT(desc) -> GANHO(desc) -> PAR(asc)
+    def _norm(x):
+        return str(x or "").upper().replace("É","E").replace("Í","I").replace("Ó","O").replace("Á","A").replace("Ã","A").replace("Ç","C")
+
+    def _pts_zone(z):
+        z=_norm(z)
+        if z=="BAIXA": return 3
+        if z=="MEDIA": return 2
+        return 1  # ALTA/qualquer
+
+    def _pts_risk(r):
+        r=_norm(r)
+        if r=="BAIXO": return 3
+        if r=="MEDIO": return 2
+        return 1  # ALTO/qualquer
+
+    def _pts_prio(p):
+        p=_norm(p)
+        if p=="ALTA": return 3
+        if p=="MEDIA": return 2
+        return 1  # BAIXA/qualquer
+
+    def _top10_select(items):
+        cand=[]
+        for it in items:
+            if it.get("side") not in ("LONG","SHORT"):
+                continue
+            ganho=float(it.get("ganho_pct") or 0.0)
+            if ganho < float(GAIN_MIN_PCT):
+                continue
+
+            pts = _pts_zone(it.get("zona")) + _pts_risk(it.get("risco")) + _pts_prio(it.get("prioridade"))
+            it2 = dict(it)
+            it2["rank_pts"] = int(pts)  # debug (nao quebra o painel)
+            cand.append(it2)
+
+        cand.sort(key=lambda x: (
+            -int(x.get("rank_pts") or 0),
+            -float(x.get("assert_pct") or 0.0),
+            -float(x.get("ganho_pct") or 0.0),
+            str(x.get("par") or "")
+        ))
+        return cand[:10]
+
+>>>>>>> Stashed changes
     top_items = _top10_select(items)
     top10 = {
         "ok": True,
@@ -180,6 +229,78 @@ def build_payload() -> Dict:
     }
     log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
     return payload, top10
+
+# ===== TOP10 (regra por cores) =====
+def _col_gain(ganho_pct: float) -> str:
+    return "G" if float(ganho_pct or 0.0) >= float(GAIN_MIN_PCT) else "R"
+
+def _col_assert(assert_pct: float) -> str:
+    a = float(assert_pct or 0.0)
+    if a <= 0.0:
+        return "R"  # sem dado
+    return "G" if a >= 65.0 else "Y"  # sua regra: <65 = amarelo
+
+def _col_zona(z: str) -> str:
+    z = str(z or "").upper()
+    if z == "BAIXA": return "G"
+    if z in ("MÉDIA","MEDIA"): return "Y"
+    return "R"  # ALTA
+
+def _col_risco(r: str) -> str:
+    r = str(r or "").upper()
+    if r == "BAIXO": return "G"
+    if r in ("MÉDIO","MEDIO"): return "Y"
+    return "R"  # ALTO
+
+def _col_prioridade(p: str) -> str:
+    p = str(p or "").upper()
+    if p == "ALTA": return "G"
+    if p in ("MÉDIA","MEDIA"): return "Y"
+    return "R"  # BAIXA
+
+def _top10_select(items):
+    # TOP10 por SCORE (sua planilha):
+    # ZONA: BAIXA=3, MÉDIA=2, ALTA=1
+    # RISCO: BAIXO=3, MÉDIO=2, ALTO=1
+    # PRIORIDADE: ALTA=3, MÉDIA=2, BAIXA=1
+    # Ordena: SCORE desc, depois ASSERT desc, depois GANHO desc
+
+    def p_zona(z):
+        z = str(z or "").upper()
+        if z == "BAIXA": return 3
+        if z in ("MÉDIA","MEDIA"): return 2
+        return 1  # ALTA
+
+    def p_risco(r):
+        r = str(r or "").upper()
+        if r == "BAIXO": return 3
+        if r in ("MÉDIO","MEDIO"): return 2
+        return 1  # ALTO
+
+    def p_prio(p):
+        p = str(p or "").upper()
+        if p == "ALTA": return 3
+        if p in ("MÉDIA","MEDIA"): return 2
+        return 1  # BAIXA
+
+    cand = []
+    for it in items:
+        if it.get("side") not in ("LONG","SHORT"):
+            continue
+
+        ganho = float(it.get("ganho_pct") or 0.0)
+        if ganho < float(GAIN_MIN_PCT):
+            continue
+
+        score = p_zona(it.get("zona")) + p_risco(it.get("risco")) + p_prio(it.get("prioridade"))
+        ass = float(it.get("assert_pct") or 0.0)
+
+        cand.append((score, ass, ganho, it))
+
+    cand.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+    return [x[3] for x in cand[:10]]
+
+
 
 def main_loop() -> None:
     log(f"START | OUT_FILE={OUT_FILE} | TOP10_FILE={TOP10_FILE} | INTERVAL_S={INTERVAL_S} | COINS={len(COINS)}")
