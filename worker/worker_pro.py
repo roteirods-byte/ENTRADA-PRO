@@ -70,14 +70,19 @@ def _pts_prioridade(p: str) -> int:
         return 2
     return 1  # BAIXA
 
+
 def _top10_select(items):
-    """TOP10 = ranking (não é sinal de operação).
-    Regras:
-      - entra no ranking se SIDE for LONG/SHORT e GANHO% >= GAIN_MIN_PCT
-      - pontuação = ZONA + RISCO + PRIORIDADE (verde=3, amarelo=2, vermelho=1)
-      - desempate: maior ASSERT%, depois maior GANHO%
     """
-    cand = []
+    TOP10 = ranking (nao é gatilho de entrada).
+    Regra:
+      - entra no ranking se SIDE in (LONG/SHORT) e GANHO >= GAIN_MIN_PCT
+      - pontuacao = pts(zona) + pts(risco) + pts(prioridade)
+      - desempate: maior ASSERT, depois maior GANHO
+    Operacao (entrar) = somente quando tudo estiver VERDE no painel.
+    """
+    w = {"G": 3, "Y": 2, "R": 1}
+    ranked = []
+
     for it in items:
         if it.get("side") not in ("LONG", "SHORT"):
             continue
@@ -86,13 +91,15 @@ def _top10_select(items):
         if ganho < float(GAIN_MIN_PCT):
             continue
 
-        pts = _pts_zona(it.get("zona")) + _pts_risco(it.get("risco")) + _pts_prioridade(it.get("prioridade"))
-        ass = float(it.get("assert_pct") or 0.0)
-        cand.append((pts, ass, ganho, it))
+        c_z = _col_zona(it.get("zona"))
+        c_r = _col_risco(it.get("risco"))
+        c_p = _col_prioridade(it.get("prioridade"))
+        pts_total = w[c_z] + w[c_r] + w[c_p]
 
-    # ordena: mais pontos primeiro; depois maior assert; depois maior ganho
-    cand.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
-    return [t[3] for t in cand[:10]]
+        ranked.append((pts_total, float(it.get("assert_pct") or 0.0), ganho, it))
+
+    ranked.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+    return [x[3] for x in ranked[:10]]
 
 
 def build_payload() -> Dict:
@@ -240,10 +247,13 @@ def _col_assert(assert_pct: float) -> str:
         return "R"  # sem dado
     return "G" if a >= 65.0 else "Y"  # sua regra: <65 = amarelo
 
+
 def _col_zona(z: str) -> str:
     z = str(z or "").upper()
-    if z == "BAIXA": return "G"
-    if z in ("MÉDIA","MEDIA"): return "Y"
+    if z == "BAIXA":
+        return "G"
+    if z in ("MÉDIA","MEDIA"):
+        return "Y"
     return "R"  # ALTA
 
 def _col_risco(r: str) -> str:
