@@ -3,47 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>TOP 10 • ENTRADA PRO</title>
-  <link rel="stylesheet" href="./assets/style.css" />
-</head>
-
-<body>
+  <title>TOP10 • ENTRADA PRO</title>
   <div id="lastUpdateBox" class="lastUpdate">Última atualização: --/--/---- --:--</div>
-
+  <link rel="stylesheet" href="./assets/style.css?v=20260209a" />
+</head>
+<body>
   <div class="container">
     <div class="topbar">
       <div class="brand">
         <div class="dot" aria-hidden="true"></div>
         <div>
           <div class="titleRow">
-            <h1>TOP 10 • ENTRADA PRO</h1>
+            <h1>TOP10 • ENTRADA PRO</h1>
             <a class="switch" href="./full.html">FULL</a>
           </div>
           <div id="meta" class="sub"></div>
         </div>
       </div>
     </div>
-
     <div class="card" style="margin-top:14px">
       <div id="status" class="offline"></div>
-
-      <!-- RESUMO DAS COLUNAS + AVISO -->
-      <div style="margin:10px 0 14px 0; padding:12px 14px; border:1px solid rgba(255,140,0,.35); border-radius:12px; background:rgba(0,0,0,.15);">
-        <div style="font-weight:800; color:#ff8c00; margin-bottom:8px;">Significado das colunas</div>
-
-        <div style="display:flex; flex-wrap:wrap; gap:10px 18px; font-size:13px; line-height:1.35; color:#ffffff;">
-          <div><span style="color:#ff8c00;font-weight:800;">ASSERT %</span>: chance histórica de acerto do sinal.</div>
-          <div><span style="color:#ff8c00;font-weight:800;">PRAZO</span>: tempo estimado para o alvo (ex: 4–6h).</div>
-          <div><span style="color:#ff8c00;font-weight:800;">ZONA</span>: força da oportunidade (BAIXA/MÉDIA/ALTA).</div>
-          <div><span style="color:#ff8c00;font-weight:800;">RISCO</span>: nível de risco do trade (BAIXO/MÉDIO/ALTO).</div>
-          <div><span style="color:#ff8c00;font-weight:800;">PRIORIDADE</span>: ordem de preferência (quanto mais alta, melhor).</div>
-        </div>
-
-        <div style="margin-top:10px; padding:10px 12px; border-radius:10px; background:rgba(0,180,0,.10); border:1px solid rgba(0,220,0,.35); color:#caffca; font-weight:900;">
-          ⚠️ SÓ ENTRAR NA OPERAÇÃO COM TODAS AS INDICAÇÕES NA COR VERDE.
-        </div>
-      </div>
-
       <div class="table-wrap">
         <table class="table" id="tbl">
           <thead>
@@ -65,12 +44,11 @@
           <tbody></tbody>
         </table>
       </div>
-
       <div class="cards" id="foot"></div>
     </div>
   </div>
 
-  <script src="./assets/common.js"></script>
+  <script src="./assets/common.js?v=20260209a"></script>
   <script>
     window.addEventListener('load', () => {
       boot('top10');

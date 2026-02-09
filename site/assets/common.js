@@ -6,7 +6,7 @@
      * GANHO %: >= 3% verde, < 3% vermelho
      * ASSERT %: >= 65% verde, < 65% vermelho
      * SIDE: LONG verde, SHORT vermelho, NAO ENTRAR amarelo
-     * ZONA: BAIXA=verde, MÉDIA=laranja, ALTA=vermelho | PRIORIDADE: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho
+     * ZONA: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho | PRIORIDADE: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho
    - Sem pagina extra
 */
 
@@ -174,16 +174,6 @@ function normTag(s) {
     .trim().toLowerCase();
 }
 
-function priorityClass(v) {
-  const t = normTag(v);
-  // PRIORIDADE: ALTA=verde, MEDIA=laranja, BAIXA=vermelho
-  if (t === 'alta' || t === 'alto' || t === 'high') return 'tag-low';
-  if (t === 'media' || t === 'medio' || t === 'mid' || t === 'medium') return 'tag-mid';
-  if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-high';
-  return '';
-}
-
-
 function tagClass(v) {
   const t = normTag(v);
   if (t === 'baixa' || t === 'baixo' || t === 'low') return 'tag-low';
@@ -191,6 +181,15 @@ function tagClass(v) {
   if (t === 'alta' || t === 'alto' || t === 'high') return 'tag-high';
   return '';
 }
+
+function zoneClass(v){
+  v = (v||"").toString().toUpperCase();
+  // ZONA: ALTA (melhor) = verde, MÉDIA = laranja, BAIXA (pior) = vermelho
+  if(v==="ALTA") return "tag-low";
+  if(v==="MÉDIA"||v==="MEDIA") return "tag-mid";
+  return "tag-high"; // BAIXA ou vazio
+}
+
 
 // PRIORIDADE é o inverso de ZONA/RISCO: quanto mais alta, melhor.
 // - ALTA  => verde
@@ -326,7 +325,7 @@ function renderTable(kind, items) {
       else if (key === 'ganho_pct') { text = fmtPct(raw); cls = gainClass(raw); }
       else if (key === 'assert_pct') { text = fmtPct(raw); cls = assertClass(raw); }
       else if (key === 'side') { text = fmtText(raw).toUpperCase(); cls = sideClass(raw); }
-      else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
+      else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = zoneClass(raw); }
       else if (key === 'risco') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
       else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = priorityClass(raw); }
       else if (key === 'data') text = fmtText(raw);
@@ -405,3 +404,7 @@ function setLastUpdateBox(json) {
   el.textContent = 'Última atualização: ' + (brt || '--/--/---- --:--');
 }
 
+
+
+// Alias PT-BR (compat)
+function zonaClass(v){ return zoneClass(v); }
