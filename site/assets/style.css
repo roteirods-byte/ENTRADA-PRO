@@ -119,3 +119,11 @@ tr:hover td{background:rgba(255,255,255,.03)}
 td.zona-z-alta,  .zona-z-alta  { color: #19ff7a !important; font-weight: 700; }
 td.zona-z-media, .zona-z-media { color: #ffb020 !important; font-weight: 700; }
 td.zona-z-baixa, .zona-z-baixa { color: #ff3b3b !important; font-weight: 700; }
+
+
+.lastUpdateInline{
+  margin-top: 8px;
+  color: var(--pumpkin);
+  font-size: 14px;
+  font-weight: 700;
+}
