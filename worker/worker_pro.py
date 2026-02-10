@@ -48,7 +48,7 @@ def _safe_ohlc(symbol: str) -> Optional[List[List[float]]]:
 # ===== TOP10 (ranking por pontuação de cores) =====
 def _pts_zona(z: str) -> int:
     z = str(z or "").upper()
-    if z == "BAIXA":
+    if z == "ALTA":
         return 3
     if z in ("MÉDIA", "MEDIA"):
         return 2
@@ -69,37 +69,6 @@ def _pts_prioridade(p: str) -> int:
     if p in ("MÉDIA", "MEDIA"):
         return 2
     return 1  # BAIXA
-
-
-def _top10_select(items):
-    """
-    TOP10 = ranking (nao é gatilho de entrada).
-    Regra:
-      - entra no ranking se SIDE in (LONG/SHORT) e GANHO >= GAIN_MIN_PCT
-      - pontuacao = pts(zona) + pts(risco) + pts(prioridade)
-      - desempate: maior ASSERT, depois maior GANHO
-    Operacao (entrar) = somente quando tudo estiver VERDE no painel.
-    """
-    w = {"G": 3, "Y": 2, "R": 1}
-    ranked = []
-
-    for it in items:
-        if it.get("side") not in ("LONG", "SHORT"):
-            continue
-
-        ganho = float(it.get("ganho_pct") or 0.0)
-        if ganho < float(GAIN_MIN_PCT):
-            continue
-
-        c_z = _col_zona(it.get("zona"))
-        c_r = _col_risco(it.get("risco"))
-        c_p = _col_prioridade(it.get("prioridade"))
-        pts_total = w[c_z] + w[c_r] + w[c_p]
-
-        ranked.append((pts_total, float(it.get("assert_pct") or 0.0), ganho, it))
-
-    ranked.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
-    return [x[3] for x in ranked[:10]]
 
 
 def build_payload() -> Dict:
@@ -176,9 +145,7 @@ def build_payload() -> Dict:
         "now_brt": now_brt,
         "items": items,
     }
-<<<<<<< Updated upstream
     # top10: NOVA REGRA (ranking por pontuação de cores)
-=======
     # top10: NOVA REGRA (PONTOS/CORES)
     # - entra no ranking: LONG/SHORT e GANHO >= GAIN_MIN_PCT
     # - ordena: PONTOS(desc) -> ASSERT(desc) -> GANHO(desc) -> PAR(asc)
@@ -187,11 +154,9 @@ def build_payload() -> Dict:
 
     def _pts_zone(z):
         z=_norm(z)
-        if z=="BAIXA": return 3
+        if z=="ALTA": return 3
         if z=="MEDIA": return 2
-        return 1  # ALTA/qualquer
-
-    def _pts_risk(r):
+        return 1  # BAIXA/qualquer
         r=_norm(r)
         if r=="BAIXO": return 3
         if r=="MEDIO": return 2
@@ -212,7 +177,7 @@ def build_payload() -> Dict:
             if ganho < float(GAIN_MIN_PCT):
                 continue
 
-            pts = _pts_zone(it.get("zona")) + _pts_risk(it.get("risco")) + _pts_prio(it.get("prioridade"))
+            pts = _pts_zone(it.get("zona")) + _pts_risco(it.get("risco")) + _pts_prio(it.get("prioridade"))
             it2 = dict(it)
             it2["rank_pts"] = int(pts)  # debug (nao quebra o painel)
             cand.append(it2)
@@ -225,7 +190,6 @@ def build_payload() -> Dict:
         ))
         return cand[:10]
 
->>>>>>> Stashed changes
     top_items = _top10_select(items)
     top10 = {
         "ok": True,
@@ -268,50 +232,6 @@ def _col_prioridade(p: str) -> str:
     if p in ("MÉDIA","MEDIA"): return "Y"
     return "R"  # BAIXA
 
-def _top10_select(items):
-    # TOP10 por SCORE (sua planilha):
-    # ZONA: BAIXA=3, MÉDIA=2, ALTA=1
-    # RISCO: BAIXO=3, MÉDIO=2, ALTO=1
-    # PRIORIDADE: ALTA=3, MÉDIA=2, BAIXA=1
-    # Ordena: SCORE desc, depois ASSERT desc, depois GANHO desc
-
-    def p_zona(z):
-        z = str(z or "").upper()
-        if z == "BAIXA": return 3
-        if z in ("MÉDIA","MEDIA"): return 2
-        return 1  # ALTA
-
-    def p_risco(r):
-        r = str(r or "").upper()
-        if r == "BAIXO": return 3
-        if r in ("MÉDIO","MEDIO"): return 2
-        return 1  # ALTO
-
-    def p_prio(p):
-        p = str(p or "").upper()
-        if p == "ALTA": return 3
-        if p in ("MÉDIA","MEDIA"): return 2
-        return 1  # BAIXA
-
-    cand = []
-    for it in items:
-        if it.get("side") not in ("LONG","SHORT"):
-            continue
-
-        ganho = float(it.get("ganho_pct") or 0.0)
-        if ganho < float(GAIN_MIN_PCT):
-            continue
-
-        score = p_zona(it.get("zona")) + p_risco(it.get("risco")) + p_prio(it.get("prioridade"))
-        ass = float(it.get("assert_pct") or 0.0)
-
-        cand.append((score, ass, ganho, it))
-
-    cand.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
-    return [x[3] for x in cand[:10]]
-
-
-
 def main_loop() -> None:
     log(f"START | OUT_FILE={OUT_FILE} | TOP10_FILE={TOP10_FILE} | INTERVAL_S={INTERVAL_S} | COINS={len(COINS)}")
     while True:
@@ -326,3 +246,77 @@ def main_loop() -> None:
 
 if __name__ == "__main__":
     main_loop()
+
+def _top10_select(items):
+    """
+    TOP10 por PONTUAÇÃO (cores/níveis):
+      ZONA:  ALTA=3, MÉDIA=2, BAIXA=1
+      RISCO: BAIXO=3, MÉDIO=2, ALTO=1
+      PRIORIDADE: ALTA=3, MÉDIA=2, BAIXA=1
+    Desempate: maior ASSERT%, depois maior GANHO%
+    """
+    def _norm(s):
+        s = (s or "").strip().upper()
+        s = (s.replace("É","E").replace("Ê","E").replace("Á","A").replace("À","A")
+              .replace("Ã","A").replace("Â","A").replace("Í","I").replace("Ó","O")
+              .replace("Õ","O").replace("Ô","O").replace("Ú","U").replace("Ç","C"))
+        return s
+
+    def _pts_zona(z):
+        z = _norm(z)
+        if z == "ALTA": return 3
+        if z == "MEDIA": return 2
+        if z == "BAIXA": return 1
+        return 0
+
+    def _pts_risco(r):
+        r = _norm(r)
+        if r == "BAIXO": return 3
+        if r == "MEDIO": return 2
+        if r == "ALTO": return 1
+        return 0
+
+
+    _pts_risk = _pts_risco  # alias (mesma função)
+
+
+    _pts_risk = _pts_risco  # alias (mesma função)
+
+    def _pts_prio(p):
+        p = _norm(p)
+        if p == "ALTA": return 3
+        if p == "MEDIA": return 2
+        if p == "BAIXA": return 1
+        return 0
+
+        rows = []
+
+        for it in (items or []):
+
+            if not isinstance(it, dict):
+
+                continue
+
+            side = _norm(it.get('side'))
+
+            if side not in ('LONG','SHORT'):
+
+                continue
+
+            ganho = float(it.get('ganho_pct') or 0.0)
+
+            if ganho < float(GAIN_MIN_PCT):
+
+                continue
+
+            ass = float(it.get('assert_pct') or 0.0)
+
+            pts = _pts_zona(it.get('zona')) + _pts_risco(it.get('risco')) + _pts_prio(it.get('prioridade'))
+
+            par = str(it.get('par') or '')
+
+            rows.append((pts, ass, ganho, par, it))
+
+        rows.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
+
+        return [it for _,_,_,_,it in rows[:10]]
