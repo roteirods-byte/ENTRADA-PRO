@@ -132,3 +132,24 @@ td.zona-z-baixa, .zona-z-baixa { color: #ff3b3b !important; font-weight: 700; }
 .hintBox, .hintBox .hintTitle, .hintBox .hintText, .hintBox .hintKey, .hintBox .hintWarn{
   color: var(--pumpkin);
 }
+
+/* ===== MOBILE (celular) ===== */
+.tableWrap{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:14px; }
+.tableWrap::-webkit-scrollbar{ height:10px; }
+
+/* quando a tela for pequena, reduz tudo */
+@media (max-width: 720px){
+  .topbar{ padding:14px 14px 6px 14px; }
+  .title{ font-size:20px; }
+  .pill{ font-size:12px; padding:6px 10px; }
+  .lastUpdateInline{ font-size:12px !important; }
+
+  .hintBox{ margin:10px 14px 0 14px; }
+  .hintTitle{ font-size:12px; }
+  .hintText{ font-size:11px; line-height:1.35; }
+  .hintWarn{ font-size:11px; }
+
+  .card{ margin:12px 14px 22px 14px; padding:10px; }
+  table{ min-width: 980px; }   /* garante rolagem ao invés de “quebrar” */
+  th, td{ font-size:11px; padding:8px 10px; }
+}
