@@ -127,3 +127,8 @@ td.zona-z-baixa, .zona-z-baixa { color: #ff3b3b !important; font-weight: 700; }
   font-size: 14px;
   font-weight: 700;
 }
+
+/* bloco "Significado das colunas" em cor abóbora */
+.hintBox, .hintBox .hintTitle, .hintBox .hintText, .hintBox .hintKey, .hintBox .hintWarn{
+  color: var(--pumpkin);
+}
