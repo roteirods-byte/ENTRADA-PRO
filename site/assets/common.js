@@ -317,6 +317,12 @@ function renderTable(kind, items) {
   const rows = Array.isArray(items) ? items : [];
   const html = rows.map(it => {
     return '<tr>' + cols.map(([_, key]) => {
+      const sideV = (it && typeof it === 'object') ? (it['side'] ?? it.side) : undefined;
+      const sideS = String(sideV ?? '').toUpperCase().replace('NAO','NÃO');
+      const isNoEnter = (sideS === 'NÃO ENTRAR');
+      if (isNoEnter && !['par','side','atual','data','hora'].includes(key)) {
+        return `<td class=""> </td>`;
+      }
       const raw = (it && typeof it === 'object') ? it[key] : undefined;
       let text = '-';
       let cls = '';

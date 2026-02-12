@@ -10,6 +10,7 @@ from engine.config import COINS, DATA_DIR, GAIN_MIN_PCT, now_utc_iso, now_brt_st
 from engine.exchanges import binance_mark_last, binance_klines, bybit_mark_last
 from engine.compute import build_signal
 from engine.io import atomic_write_json
+from engine.audit import log_prices, log_signals
 
 # arquivos de saída (lidos pela API / painéis)
 OUT_FILE = Path(os.getenv("PRO_JSON", str(Path(DATA_DIR) / "pro.json")))
@@ -198,7 +199,14 @@ def build_payload() -> Dict:
         "now_brt": now_brt,
         "items": top_items,
     }
-    log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
+        # auditoria prática (não pode derrubar o worker)
+    try:
+        log_prices(items, updated_at=updated_at)
+        log_signals(items, updated_at=updated_at, gain_min_pct=float(GAIN_MIN_PCT))
+    except Exception:
+        pass
+
+log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
     return payload, top10
 
 # ===== TOP10 (regra por cores) =====
