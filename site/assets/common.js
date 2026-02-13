@@ -322,7 +322,7 @@ function renderTable(kind, items) {
       const _isNo = _sidev.toUpperCase().includes('NÃO') || _sidev.toUpperCase().includes('NAO');
       /* PRAZO_RAW */
       if (key === 'prazo') {
-        if (_isNo) return `<td class="">${''}</td>`;
+        if (_isNo) return `<td class="muted">-</td>`;
         const _pv = (it && typeof it === 'object') ? (it['prazo'] ?? '') : '';
         return `<td class="">${_pv ?? ''}</td>`;
       }

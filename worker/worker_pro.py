@@ -102,7 +102,7 @@ def build_payload() -> Dict:
             continue
 
         ohlc = _safe_ohlc(symbol)
-        if not ohlc:
+        if (not ohlc_1h) or (not ohlc_4h):
             miss_count += 1
             items.append({
                 "par": par,
@@ -119,7 +119,7 @@ def build_payload() -> Dict:
             })
             continue
 
-        sig = build_signal(par=par, ohlc=ohlc, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT), candle_hours=4.0)
+        sig = build_signal(par=par, ohlc_1h=ohlc_1h, ohlc_4h=ohlc_4h, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT))
 
         items.append({
             "par": sig.par,
