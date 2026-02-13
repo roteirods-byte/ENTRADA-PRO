@@ -125,6 +125,7 @@ def main():
     # janelas aprovadas
     WINDOWS = {
         "30m": 30,
+        "1h": 60,
         "4h": 240,
         "24h": 1440,
     }
@@ -177,15 +178,15 @@ def main():
     # escreve CSV por moeda
     fields = [
         "par","signals",
-        "hit_30m","hit_4h","hit_24h",
-        "hit_rate_30m","hit_rate_4h","hit_rate_24h",
-        "avg_time_to_hit_30m","avg_time_to_hit_4h","avg_time_to_hit_24h",
-        "avg_adverse_30m","avg_adverse_4h","avg_adverse_24h",
+        "hit_30m","hit_1h","hit_4h","hit_24h",
+        "hit_rate_30m","hit_rate_1h","hit_rate_4h","hit_rate_24h",
+        "avg_time_to_hit_30m","avg_time_to_hit_1h","avg_time_to_hit_4h","avg_time_to_hit_24h",
+        "avg_adverse_30m","avg_adverse_1h","avg_adverse_4h","avg_adverse_24h",
     ]
 
     rows_out: List[Dict[str, Any]] = []
     total_signals = 0
-    total_hits = {"30m":0,"4h":0,"24h":0}
+    total_hits = {k:0 for k in WINDOWS.keys()}
 
     for par, st in sorted(stats.items()):
         n = int(st.get("signals", 0))
@@ -196,10 +197,9 @@ def main():
         def hit(label):
             return int(st.get(f"hit_{label}", 0))
 
-        h30, h4, h24 = hit("30m"), hit("4h"), hit("24h")
-        total_hits["30m"] += h30
-        total_hits["4h"] += h4
-        total_hits["24h"] += h24
+        h30, h1, h4, h24 = hit("30m"), hit("1h"), hit("4h"), hit("24h")
+        for k in WINDOWS.keys():
+            total_hits[k] += hit(k)
 
         def rate(h):
             return round((h / n) * 100.0, 2) if n else 0.0
@@ -218,15 +218,19 @@ def main():
             "par": par,
             "signals": n,
             "hit_30m": h30,
+            "hit_1h": h1,
             "hit_4h": h4,
             "hit_24h": h24,
             "hit_rate_30m": rate(h30),
+            "hit_rate_1h": rate(h1),
             "hit_rate_4h": rate(h4),
             "hit_rate_24h": rate(h24),
             "avg_time_to_hit_30m": avg_time("30m"),
+            "avg_time_to_hit_1h": avg_time("1h"),
             "avg_time_to_hit_4h": avg_time("4h"),
             "avg_time_to_hit_24h": avg_time("24h"),
             "avg_adverse_30m": avg_adv("30m"),
+            "avg_adverse_1h": avg_adv("1h"),
             "avg_adverse_4h": avg_adv("4h"),
             "avg_adverse_24h": avg_adv("24h"),
         })
@@ -240,16 +244,8 @@ def main():
     summary = {
         "ok": True,
         "total_signals": total_signals,
-        "hits": {
-            "30m": total_hits["30m"],
-            "4h": total_hits["4h"],
-            "24h": total_hits["24h"],
-        },
-        "hit_rate_pct": {
-            "30m": round((total_hits["30m"]/total_signals)*100.0, 2) if total_signals else 0.0,
-            "4h": round((total_hits["4h"]/total_signals)*100.0, 2) if total_signals else 0.0,
-            "24h": round((total_hits["24h"]/total_signals)*100.0, 2) if total_signals else 0.0,
-        },
+        "hits": {k: total_hits[k] for k in WINDOWS.keys()},
+        "hit_rate_pct": {k: (round((total_hits[k]/total_signals)*100.0, 2) if total_signals else 0.0) for k in WINDOWS.keys()},
         "files": {
             "by_coin_csv": str(OUT_BY_COIN),
             "summary_json": str(OUT_SUMMARY),

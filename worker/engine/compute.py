@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple, Optional
 import math
 
 from .indicators import ema, rsi, atr
+import statistics
 
 @dataclass
 class Signal:
@@ -22,12 +23,13 @@ class Signal:
     price_source: str  # MARK
 
 def _fmt_prazo(hours_min: float, hours_max: float) -> str:
-    # choose hours if <48h else days
-    if hours_max < 48:
-        return f"{max(0.0,hours_min):.0f}-{max(0.0,hours_max):.0f}h"
-    dmin = hours_min/24.0
-    dmax = hours_max/24.0
-    return f"{max(0.0,dmin):.1f}-{max(0.0,dmax):.1f}d"
+    # PRAZO como número (horas) para variar por moeda
+    h = (float(hours_min or 0.0) + float(hours_max or 0.0)) / 2.0
+    if h <= 0:
+        return "-"
+    if h < 1.0:
+        return f"{h*60.0:.0f}m"   # ex: 45m
+    return f"{h:.1f}h"           # ex: 5.3h
 
 def direction_from_indicators(closes: List[float]) -> Tuple[str, float]:
     # returns (side, strength 0..1)
@@ -144,9 +146,19 @@ def build_signal(par: str, ohlc: List[List[float]], mark_price: float, gain_min_
     ganho_pct = abs(alvo - mark_price) / mark_price * 100.0
     if ganho_pct < gain_min_pct:
         return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, ganho_pct, "-", 0.0, "ALTO", "BAIXA", "ALTA", "MARK")
-    # prazo: hours from ATR per 4h candle
-    atr_per_hour = atr_val / 4.0
-    hours = (abs(alvo - mark_price) / max(1e-9, atr_per_hour))
+    # prazo (profissional): tempo estimado para atingir 3% (minimo)
+    # movimento por hora (%): mediana do range das velas 4h / 4
+    trs_pct = []
+    for i in range(1, len(ohlc)):
+        h = float(ohlc[i][1]); l = float(ohlc[i][2]); c_prev = float(ohlc[i-1][3])
+        tr = max(h - l, abs(h - c_prev), abs(l - c_prev))
+        trs_pct.append(tr / max(1e-9, c_prev))
+    tail = trs_pct[-80:] if len(trs_pct) > 80 else trs_pct
+    med_tr_pct = statistics.median(tail) if tail else atr_pct
+    move_per_hour_pct = max(1e-6, med_tr_pct / 4.0)
+
+    dist_pct_min = float(gain_min_pct) / 100.0  # 3% (minimo)
+    hours = dist_pct_min / move_per_hour_pct
     hours_min = hours * 0.8
     hours_max = hours * 1.2
     prazo = _fmt_prazo(hours_min, hours_max)

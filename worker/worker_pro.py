@@ -199,14 +199,14 @@ def build_payload() -> Dict:
         "now_brt": now_brt,
         "items": top_items,
     }
-        # auditoria prática (não pode derrubar o worker)
+    # auditoria prática (não pode derrubar o worker)
     try:
-        log_prices(items, updated_at=updated_at)
-        log_signals(items, updated_at=updated_at, gain_min_pct=float(GAIN_MIN_PCT))
+        log_prices(top_items, updated_at=updated_at)
+        log_signals(top_items, updated_at=updated_at, gain_min_pct=float(GAIN_MIN_PCT))
     except Exception:
         pass
 
-log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
+    log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
     return payload, top10
 
 # ===== TOP10 (regra por cores) =====

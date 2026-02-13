@@ -317,6 +317,20 @@ function renderTable(kind, items) {
   const rows = Array.isArray(items) ? items : [];
   const html = rows.map(it => {
     return '<tr>' + cols.map(([_, key]) => {
+      /* NAO_ENTRAR_BLANK */
+      const _sidev = (it && typeof it === 'object') ? String(it['side'] || '') : '';
+      const _isNo = _sidev.toUpperCase().includes('NÃO') || _sidev.toUpperCase().includes('NAO');
+      /* PRAZO_RAW */
+      if (key === 'prazo') {
+        if (_isNo) return `<td class="">${''}</td>`;
+        const _pv = (it && typeof it === 'object') ? (it['prazo'] ?? '') : '';
+        return `<td class="">${_pv ?? ''}</td>`;
+      }
+
+      if (_isNo && ['alvo','ganho_pct','assert_pct','prazo','zona','risco','prioridade'].includes(key)) {
+        return `<td class="">${''}</td>`;
+      }
+
       const sideV = (it && typeof it === 'object') ? (it['side'] ?? it.side) : undefined;
       const sideS = String(sideV ?? '').toUpperCase().replace('NAO','NÃO');
       const isNoEnter = (sideS === 'NÃO ENTRAR');
