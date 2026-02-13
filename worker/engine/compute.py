@@ -23,13 +23,21 @@ class Signal:
     price_source: str  # MARK
 
 def _fmt_prazo(hours_min: float, hours_max: float) -> str:
-    # PRAZO como número (horas) para variar por moeda
-    h = (float(hours_min or 0.0) + float(hours_max or 0.0)) / 2.0
-    if h <= 0:
+    """Formata PRAZO como faixa (ex: 35-50m, 4-6h).
+
+    Motivo: no painel, uma faixa é mais fácil de ler do que um número quebrado.
+    """
+    hmin = float(hours_min or 0.0)
+    hmax = float(hours_max or 0.0)
+    if hmin <= 0 or hmax <= 0:
         return "-"
-    if h < 1.0:
-        return f"{h*60.0:.0f}m"   # ex: 45m
-    return f"{h:.1f}h"           # ex: 5.3h
+    if hmax < 1.0:
+        mmin = max(1.0, math.floor(hmin * 60.0))
+        mmax = max(mmin, math.ceil(hmax * 60.0))
+        return f"{mmin:.0f}-{mmax:.0f}m"
+    a = max(1.0, math.floor(hmin))
+    b = max(a, math.ceil(hmax))
+    return f"{a:.0f}-{b:.0f}h"
 
 def direction_from_indicators(closes: List[float]) -> Tuple[str, float]:
     # returns (side, strength 0..1)
@@ -137,9 +145,9 @@ def build_signal(par: str, ohlc: List[List[float]], mark_price: float, gain_min_
     if atr_val <= 0 or side=="NÃO ENTRAR":
         return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "-", 0.0, "ALTO", "BAIXA", "ALTA", "MARK")
     atr_pct = atr_val / max(1e-9, mark_price)
-    # target distance: at least 3%, else based on ATR%
-    dist_pct = max(gain_min_pct/100.0, 1.2*atr_pct)
-    target_dist = dist_pct * mark_price
+    # ALVO baseado em ATR (regra simples e estável)
+    # ALVO = 1,5 x ATR (em preço). O filtro de GANHO% continua sendo o freio único.
+    target_dist = 1.5 * atr_val
     if side=="LONG":
         alvo = mark_price + target_dist
     else:
@@ -147,8 +155,8 @@ def build_signal(par: str, ohlc: List[List[float]], mark_price: float, gain_min_
     ganho_pct = abs(alvo - mark_price) / mark_price * 100.0
     if ganho_pct < gain_min_pct:
         return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, ganho_pct, "-", 0.0, "ALTO", "BAIXA", "ALTA", "MARK")
-    # prazo (profissional): tempo estimado para atingir 3% (minimo)
-    # movimento por hora (%): mediana do range das velas 4h / 4
+    # PRAZO: distancia até o ALVO dividida pela "velocidade" média do mercado.
+    # velocidade por hora (%): mediana do range das velas / horas da vela.
     trs_pct = []
     for i in range(1, len(ohlc)):
         h = float(ohlc[i][1]); l = float(ohlc[i][2]); c_prev = float(ohlc[i-1][3])
