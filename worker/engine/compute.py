@@ -114,17 +114,18 @@ def classify_levels(atr_pct: float, assert_pct: float, gain_pct: float, strength
     else:
         prioridade="BAIXA"
 
-    # zona (simplificada)
+    # zona (força da oportunidade)
+    # quanto maior a força, maior a ZONA
     if strength >= 0.65 and atr_pct <= 0.04:
-        zona="BAIXA"
+        zona="ALTA"
     elif strength >= 0.40:
         zona="MÉDIA"
     else:
-        zona="ALTA"
+        zona="BAIXA"
 
     return risco, prioridade, zona
 
-def build_signal(par: str, ohlc: List[List[float]], mark_price: float, gain_min_pct: float) -> Signal:
+def build_signal(par: str, ohlc: List[List[float]], mark_price: float, gain_min_pct: float, candle_hours: float = 4.0) -> Signal:
     closes=[x[3] for x in ohlc]
     highs=[x[1] for x in ohlc]
     lows=[x[2] for x in ohlc]
@@ -155,10 +156,11 @@ def build_signal(par: str, ohlc: List[List[float]], mark_price: float, gain_min_
         trs_pct.append(tr / max(1e-9, c_prev))
     tail = trs_pct[-80:] if len(trs_pct) > 80 else trs_pct
     med_tr_pct = statistics.median(tail) if tail else atr_pct
-    move_per_hour_pct = max(1e-6, med_tr_pct / 4.0)
+    candle_h = max(1e-6, float(candle_hours or 4.0))
+    move_per_hour_pct = max(1e-6, med_tr_pct / candle_h)
 
-    dist_pct_min = float(gain_min_pct) / 100.0  # 3% (minimo)
-    hours = dist_pct_min / move_per_hour_pct
+    dist_pct = max(1e-6, float(ganho_pct) / 100.0)  # usa o ganho real do sinal
+    hours = dist_pct / move_per_hour_pct
     hours_min = hours * 0.8
     hours_max = hours * 1.2
     prazo = _fmt_prazo(hours_min, hours_max)

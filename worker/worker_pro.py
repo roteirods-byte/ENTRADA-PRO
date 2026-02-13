@@ -119,7 +119,7 @@ def build_payload() -> Dict:
             })
             continue
 
-        sig = build_signal(par=par, ohlc=ohlc, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT))
+        sig = build_signal(par=par, ohlc=ohlc, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT), candle_hours=4.0)
 
         items.append({
             "par": sig.par,
