@@ -142,14 +142,15 @@ def classify_levels(atr_pct: float, gain_pct: float, side_final: str, side_24h: 
 
     return risco, prioridade, zona
 
-def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]], mark_price: float, gain_min_pct: float) -> Signal:
+def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]], mark_price: float, gain_min_pct: float, assert_min_pct: float) -> Signal:
     """
     Regras do projeto (versão prática):
     1) SIDE: 1H e 4H precisam concordar (senão: NÃO ENTRAR).
     2) ALVO (ATR do modo escolhido):
        - LONG: ATUAL + 1.5*ATR
        - SHORT: ATUAL - 1.5*ATR
-    3) GANHO% = |ALVO-ATUAL|/ATUAL * 100.  Se < 3% => NÃO ENTRAR.
+    3) GANHO% = |ALVO-ATUAL|/ATUAL * 100.  Se < gain_min_pct => NÃO ENTRAR.
+    4) ASSERT%: se < assert_min_pct => NÃO ENTRAR.
     4) 24h é só freio: aqui usamos a direção das últimas ~48h do 1H para ajustar ZONA/RISCO.
     """
     entrada = float(mark_price)
@@ -190,7 +191,7 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
         # ainda mostramos zona/risco/prioridade (para o painel não ficar "vazio")
         atr_pct = (atr4 / max(1e-9, atual)) if atr4 > 0 else 0.0
         risco, prioridade, zona = classify_levels(atr_pct, 0.0, "NÃO ENTRAR", side24)
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "-", 0.0, risco, prioridade, zona, "MARK")
+        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
 
     # alvo / ganho (regra oficial)
     target_dist = 1.5 * atr_val
@@ -205,7 +206,7 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
     if ganho_pct < float(gain_min_pct):
         atr_pct = atr_val / max(1e-9, atual)
         risco, prioridade, zona = classify_levels(atr_pct, 0.0, "NÃO ENTRAR", side24)
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "-", 0.0, risco, prioridade, zona, "MARK")
+        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
 
     # prazo estimado (base no ritmo médio do gráfico escolhido)
     atr_pct = atr_val / max(1e-9, atual)
@@ -228,6 +229,10 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
     prazo = _fmt_prazo(hours_min, hours_max)
 
     assert_pct = mfe_mae_assert(use_ohlc, side_final, target_dist, atr_val, lookahead=12)
+
+    # filtro oficial de ASSERT
+    if float(assert_pct or 0.0) < float(assert_min_pct):
+        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
 
     risco, prioridade, zona = classify_levels(atr_pct, ganho_pct, side_final, side24)
 

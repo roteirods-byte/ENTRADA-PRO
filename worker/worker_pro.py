@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from engine.config import COINS, DATA_DIR, GAIN_MIN_PCT, now_utc_iso, now_brt_str
+from engine.config import COINS, DATA_DIR, GAIN_MIN_PCT, ASSERT_MIN_PCT, now_utc_iso, now_brt_str
 from engine.exchanges import binance_mark_last, binance_klines, bybit_mark_last
 from engine.compute import build_signal
 from engine.io import atomic_write_json
@@ -76,6 +76,10 @@ def build_payload() -> Dict:
     updated_at = now_utc_iso()
     now_brt = now_brt_str()
 
+    # data/hora para colunas do painel
+    _data, _hora = (now_brt.split(" ", 1) + [""])[:2]
+
+
     items = []
     ok_count = 0
     miss_count = 0
@@ -119,21 +123,41 @@ def build_payload() -> Dict:
             })
             continue
 
-        sig = build_signal(par=par, ohlc_1h=ohlc_1h, ohlc_4h=ohlc_4h, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT))
+        sig = build_signal(par=par, ohlc_1h=ohlc_1h, ohlc_4h=ohlc_4h, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT), assert_min_pct=float(ASSERT_MIN_PCT))
 
-        items.append({
-            "par": sig.par,
-            "side": sig.side,
-            "atual": float(sig.atual),
-            "alvo": float(sig.alvo),
-            "ganho_pct": float(sig.ganho_pct),
-            "assert_pct": float(sig.assert_pct),
-            "prazo": sig.prazo,
-            "zona": sig.zona,
-            "risco": sig.risco,
-            "prioridade": sig.prioridade,
-            "price_source": src,
-        })
+        if sig.side == "NÃO ENTRAR":
+    items.append({
+        "par": sig.par,
+        "side": "NÃO ENTRAR",
+        "atual": float(sig.atual),
+        "data": _data,
+        "hora": _hora,
+        # demais colunas devem ficar vazias quando NÃO ENTRAR
+        "ganho_pct": None,
+        "assert_pct": None,
+        "alvo": None,
+        "prazo": "",
+        "zona": "",
+        "risco": "",
+        "prioridade": "",
+        "price_source": src,
+    })
+else:
+    items.append({
+        "par": sig.par,
+        "side": sig.side,
+        "atual": float(sig.atual),
+        "alvo": float(sig.alvo),
+        "ganho_pct": float(sig.ganho_pct),
+        "assert_pct": float(sig.assert_pct),
+        "prazo": sig.prazo,
+        "zona": sig.zona,
+        "risco": sig.risco,
+        "prioridade": sig.prioridade,
+        "data": _data,
+        "hora": _hora,
+        "price_source": src,
+    })
         ok_count += 1
 
     # ordena por par (alfabético)
@@ -176,6 +200,9 @@ def build_payload() -> Dict:
                 continue
             ganho=float(it.get("ganho_pct") or 0.0)
             if ganho < float(GAIN_MIN_PCT):
+                continue
+            a=float(it.get("assert_pct") or 0.0)
+            if a < float(ASSERT_MIN_PCT):
                 continue
 
             pts = _pts_zone(it.get("zona")) + _pts_risco(it.get("risco")) + _pts_prio(it.get("prioridade"))

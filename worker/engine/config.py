@@ -48,6 +48,7 @@ DATA_DIR = os.environ.get("DATA_DIR", str(REPO_DIR / "data")).strip()
 
 # --- parâmetros ---
 GAIN_MIN_PCT = float(os.environ.get("GAIN_MIN_PCT", "3").strip())
+ASSERT_MIN_PCT = float(os.environ.get("ASSERT_MIN_PCT", "65").strip())
 
 
 # --- COINS FILE: tenta vários lugares; se não achar, usa DEFAULT_COINS ---
