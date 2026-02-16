@@ -17,7 +17,7 @@ WORKER_DIR = ENGINE_DIR.parent                       # /app/worker
 REPO_DIR = WORKER_DIR.parent                         # /app
 
 
-# --- defaults (78 moedas) ---
+# --- defaults (39 moedas) ---
 DEFAULT_COINS = [
     "AAVE","ADA","APE","APT","AR","ARB","ATOM","AVAX","AXS","BAT","BCH","BLUR",
     "BNB","BONK","BTC","COMP","CRV","DASH","DENT","DGB","DOGE","DOT","EGLD","EOS",
@@ -46,7 +46,7 @@ def _first_existing(paths: list[Path]) -> Path | None:
 # --- DATA DIR (compartilhado com a API no mesmo container) ---
 DATA_DIR = os.environ.get("DATA_DIR", str(REPO_DIR / "data")).strip()
 
-# defaults do projeto ENTRADA-PRO (filtros oficiais: 2% e 55%)
+# defaults
 _default_gain = 2.0
 _default_assert = 55.0
 
@@ -62,11 +62,10 @@ except Exception:
 GAIN_MIN_PCT = float(os.environ.get("GAIN_MIN_PCT", str(_default_gain)).strip())
 ASSERT_MIN_PCT = float(os.environ.get("ASSERT_MIN_PCT", str(_default_assert)).strip())
 
-
 # --- COINS FILE: tenta vários lugares; se não achar, usa DEFAULT_COINS ---
 ENV_COINS_FILE = os.environ.get("COINS_FILE", "").strip()
 
-COINS_FILE_CANDIDATES: list[Path] = []
+COINS_FILE_CANDIDATES = []
 if ENV_COINS_FILE:
     COINS_FILE_CANDIDATES.append(Path(ENV_COINS_FILE))
 

@@ -21,7 +21,8 @@ class Signal:
     prioridade: str
     zona: str
     price_source: str  # MARK
-    nao_entrar_motivo: str = ""  # interno (audit)
+    nao_entrar_motivo: str = ""  # interno
+    ttl_hours: int = 0  # interno (0 quando NÃO ENTRAR)
 
 def _fmt_prazo(hours_min: float, hours_max: float) -> str:
     # PRAZO como número (horas) para variar por moeda
@@ -145,14 +146,10 @@ def classify_levels(atr_pct: float, gain_pct: float, side_final: str, side_24h: 
 
 def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]], mark_price: float, gain_min_pct: float, assert_min_pct: float) -> Signal:
     """
-    Regras do projeto (versão prática):
-    1) SIDE: 1H e 4H precisam concordar (senão: NÃO ENTRAR).
-    2) ALVO (ATR do modo escolhido):
-       - LONG: ATUAL + 1.5*ATR
-       - SHORT: ATUAL - 1.5*ATR
-    3) GANHO% = |ALVO-ATUAL|/ATUAL * 100.  Se < gain_min_pct => NÃO ENTRAR.
-    4) ASSERT%: se < assert_min_pct => NÃO ENTRAR.
-    4) 24h é só freio: aqui usamos a direção das últimas ~48h do 1H para ajustar ZONA/RISCO.
+    Objetivo:
+    - Calcular ganho% e assert% sempre que possível.
+    - SIDE só vira LONG/SHORT se passar nos filtros (gain_min_pct / assert_min_pct) e se 1H e 4H concordarem.
+    - Se NÃO ENTRAR: PRAZO/ZONA/RISCO/PRIORIDADE ficam vazios (regra oficial), mas mantemos ganho% e assert% para auditoria.
     """
     entrada = float(mark_price)
     atual = float(mark_price)
@@ -174,41 +171,38 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
     closes_24 = closes1[-48:] if len(closes1) >= 48 else closes1
     side24, _ = direction_from_indicators(closes_24)
 
-    # regra principal do SIDE
+    # candidato para cálculo (mesmo se NÃO ENTRAR por conflito)
+    cand_side = side1
+    cand_strength = strength1
+    if (side4 != "NÃO ENTRAR") and (strength4 > cand_strength):
+        cand_side = side4
+        cand_strength = strength4
+
+    # regra oficial de SIDE (precisa concordar)
     side_final = side1 if (side1 == side4 and side1 != "NÃO ENTRAR") else "NÃO ENTRAR"
 
-    # escolher modo (1H se estiver bem forte, senão 4H)
+    motivo = ""
+    if side_final == "NÃO ENTRAR" and (side1 != "NÃO ENTRAR" or side4 != "NÃO ENTRAR") and (side1 != side4):
+        motivo = "conflito_1h_4h"
+
+    # escolher modo (1H se estiver forte, senão 4H)
     mode = "4H"
     use_ohlc = ohlc_4h
     atr_val = float(atr4)
-    strength = float(min(strength1, strength4))
-    if side_final != "NÃO ENTRAR":
-        if strength1 >= 0.65 and atr1 > 0:
-            mode = "1H"
-            use_ohlc = ohlc_1h
-            atr_val = float(atr1)
+    if cand_side != "NÃO ENTRAR" and strength1 >= 0.65 and atr1 > 0:
+        mode = "1H"
+        use_ohlc = ohlc_1h
+        atr_val = float(atr1)
 
-    if atr_val <= 0 or side_final == "NÃO ENTRAR":
-        # Regra oficial: quando NÃO ENTRAR, não preencher PRAZO/ZONA/RISCO/PRIORIDADE.
-        # Ainda assim, registramos motivo interno para auditoria.
-        if atr_val <= 0:
-            motivo = "sem_atr"
-        else:
-            if side1 == "NÃO ENTRAR" or side4 == "NÃO ENTRAR":
-                motivo = "sem_setup"
-            else:
-                motivo = "sem_confluencia"
-        return Signal(
-            par, "NÃO ENTRAR", "PRO",
-            entrada, atual, atual,
-            0.0, "", 0.0,
-            "", "", "", "MARK",
-            motivo,
-        )
+    if cand_side == "NÃO ENTRAR" or atr_val <= 0:
+        # não dá para estimar alvo/ganho/assert com segurança
+        if not motivo:
+            motivo = "sem_atr" if atr_val <= 0 else "sem_direcao"
+        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK", motivo, 0)
 
-    # alvo / ganho (regra oficial)
+    # alvo / ganho (padrão)
     target_dist = 1.5 * atr_val
-    if side_final == "LONG":
+    if cand_side == "LONG":
         alvo = atual + target_dist
     else:
         alvo = atual - target_dist
@@ -217,8 +211,6 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
 
     # prazo estimado (base no ritmo médio do gráfico escolhido)
     atr_pct = atr_val / max(1e-9, atual)
-
-    import statistics
     trs_pct=[]
     tf_hours = 1.0 if mode == "1H" else 4.0
     for i in range(1, len(use_ohlc)):
@@ -235,39 +227,20 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
     hours_max = hours * 1.2
     prazo = _fmt_prazo(hours_min, hours_max)
 
-    assert_pct = mfe_mae_assert(use_ohlc, side_final, target_dist, atr_val, lookahead=12)
+    assert_pct = mfe_mae_assert(use_ohlc, cand_side, target_dist, atr_val, lookahead=12)
 
-    # decisão final (mantendo GANHO% e ASSERT% mesmo quando NÃO ENTRAR)
-    motivo = ""
-    side_out = side_final
-    g_ok = float(ganho_pct or 0.0) >= float(gain_min_pct)
-    a_ok = float(assert_pct or 0.0) >= float(assert_min_pct)
+    # aplicar filtros oficiais
+    if side_final == "NÃO ENTRAR":
+        # mantém ganho/assert, mas não entra
+        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, ganho_pct, "", float(assert_pct or 0.0), "", "", "", "MARK", motivo or "nao_confirmado", 0)
 
-    if not g_ok and not a_ok:
-        side_out = "NÃO ENTRAR"
-        motivo = f"ganho<{float(gain_min_pct):g}+assert<{float(assert_min_pct):g}"
-    elif not g_ok:
-        side_out = "NÃO ENTRAR"
-        motivo = f"ganho<{float(gain_min_pct):g}"
-    elif not a_ok:
-        side_out = "NÃO ENTRAR"
-        motivo = f"assert<{float(assert_min_pct):g}"
+    if float(ganho_pct or 0.0) < float(gain_min_pct):
+        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, ganho_pct, "", float(assert_pct or 0.0), "", "", "", "MARK", "ganho<min", 0)
 
-    if side_out == "NÃO ENTRAR":
-        return Signal(
-            par, "NÃO ENTRAR", "PRO",
-            entrada, atual, alvo,
-            float(ganho_pct), "", float(assert_pct),
-            "", "", "", "MARK",
-            motivo,
-        )
+    if float(assert_pct or 0.0) < float(assert_min_pct):
+        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, ganho_pct, "", float(assert_pct or 0.0), "", "", "", "MARK", "assert<min", 0)
 
-    risco, prioridade, zona = classify_levels(atr_pct, ganho_pct, side_out, side24)
-
-    return Signal(
-        par, side_out, "PRO",
-        entrada, atual, alvo,
-        float(ganho_pct), prazo, float(assert_pct),
-        risco, prioridade, zona, "MARK",
-        "",
-    )
+    # aprovado
+    risco, prioridade, zona = classify_levels(atr_pct, ganho_pct, cand_side, side24)
+    ttl_hours = 4 if mode == "1H" else 12
+    return Signal(par, cand_side, "PRO", entrada, atual, alvo, ganho_pct, prazo, float(assert_pct or 0.0), risco, prioridade, zona, "MARK", "", ttl_hours)
