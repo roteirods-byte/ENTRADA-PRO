@@ -315,41 +315,30 @@ function renderTable(kind, items) {
   if (!tbody) return;
 
   const rows = Array.isArray(items) ? items : [];
+  const KEEP_NOENTER = new Set(['par','side','atual','ganho_pct','assert_pct','data','hora']);
+
   const html = rows.map(it => {
+    const sideRaw = fmtText((it && typeof it === 'object') ? it['side'] : '')
+      .toUpperCase()
+      .replace('NAO', 'NÃO');
+
+    const isNoEnter = sideRaw.includes('NÃO ENTRAR');
+
     return '<tr>' + cols.map(([_, key]) => {
-      /* NAO_ENTRAR_BLANK */
-      const _sidev = (it && typeof it === 'object') ? String(it['side'] || '') : '';
-      const _isNo = _sidev.toUpperCase().includes('NÃO') || _sidev.toUpperCase().includes('NAO');
-      /* PRAZO_RAW */
-      if (key === 'prazo') {
-        if (_isNo) return `<td class="muted">-</td>`;
-        const _pv = (it && typeof it === 'object') ? (it['prazo'] ?? '') : '';
-        return `<td class="">${_pv ?? ''}</td>`;
-      }
+      // REGRA: se NÃO ENTRAR, só mostra PAR,SIDE,ATUAL,GANHO%,ASSERT%,DATA,HORA
+      if (isNoEnter && !KEEP_NOENTER.has(key)) return `<td class=""></td>`;
 
-      if (_isNo && ['alvo','ganho_pct','assert_pct','prazo','zona','risco','prioridade'].includes(key)) {
-        return `<td class="">${''}</td>`;
-      }
-
-      const sideV = (it && typeof it === 'object') ? (it['side'] ?? it.side) : undefined;
-      const sideS = String(sideV ?? '').toUpperCase().replace('NAO','NÃO');
-      const isNoEnter = (sideS === 'NÃO ENTRAR');
-      if (isNoEnter && !['par','side','atual','data','hora'].includes(key)) {
-        return `<td class=""> </td>`;
-      }
       const raw = (it && typeof it === 'object') ? it[key] : undefined;
       let text = '-';
       let cls = '';
 
-      if (key === 'entrada' || key === 'atual' || key === 'alvo') text = fmtPrice(raw);
+      if (key === 'atual' || key === 'alvo') text = fmtPrice(raw);
       else if (key === 'ganho_pct') { text = fmtPct(raw); cls = gainClass(raw); }
       else if (key === 'assert_pct') { text = fmtPct(raw); cls = assertClass(raw); }
-      else if (key === 'side') { text = fmtText(raw).toUpperCase(); cls = sideClass(raw); }
+      else if (key === 'side') { text = fmtText(raw).toUpperCase().replace('NAO', 'NÃO'); cls = sideClass(raw); }
       else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = zoneClass(raw); }
       else if (key === 'risco') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
       else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = priorityClass(raw); }
-      else if (key === 'data') text = fmtText(raw);
-      else if (key === 'hora') text = fmtText(raw);
       else text = fmtText(raw);
 
       return `<td class="${cls}">${text}</td>`;
