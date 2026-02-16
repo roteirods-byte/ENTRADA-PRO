@@ -69,6 +69,16 @@ try:
 except Exception:
     pass
 
+_default_gain = 3.0
+_default_assert = 65.0
+try:
+    _s = _load_json(WORKER_DIR / "config" / "settings.json")
+    if isinstance(_s, dict):
+        _default_gain = float(_s.get("gain_min_pct", _default_gain))
+        _default_assert = float(_s.get("assert_min_pct", _default_assert))
+except Exception:
+    pass
+
 GAIN_MIN_PCT = float(os.environ.get("GAIN_MIN_PCT", str(_default_gain)).strip())
 ASSERT_MIN_PCT = float(os.environ.get("ASSERT_MIN_PCT", str(_default_assert)).strip())
 
