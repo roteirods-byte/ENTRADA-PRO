@@ -1,33 +1,26 @@
-# worker/worker_pro.py  (GERADOR COMPLETO - SINAIS + COLUNAS)
 from __future__ import annotations
 
 import os
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from engine.config import COINS, DATA_DIR, GAIN_MIN_PCT, ASSERT_MIN_PCT, now_utc_iso, now_brt_str
 from engine.exchanges import binance_mark_last, binance_klines, bybit_mark_last
 from engine.compute import build_signal
 from engine.io import atomic_write_json
-from engine.audit import log_prices, log_signals
 
-# arquivos de saída (lidos pela API / painéis)
 OUT_FILE = Path(os.getenv("PRO_JSON", str(Path(DATA_DIR) / "pro.json")))
 TOP10_FILE = Path(os.getenv("TOP10_JSON", str(Path(DATA_DIR) / "top10.json")))
-
-# intervalo (segundos). Padrão: 300 (5 min)
 INTERVAL_S = int(os.getenv("WORKER_INTERVAL_S", "300"))
 
 def log(msg: str) -> None:
     print(f"[WORKER_PRO] {msg}", flush=True)
 
 def _sym(par: str) -> str:
-    # FUTURO PERP USDT (linear)
     return f"{par.upper()}USDT"
 
-def _safe_mark(symbol: str) -> tuple[Optional[float], str]:
-    # tenta Binance primeiro, depois Bybit
+def _safe_mark(symbol: str) -> Tuple[Optional[float], str]:
     try:
         j = binance_mark_last(symbol)
         return float(j["mark"]), "BINANCE"
@@ -39,46 +32,43 @@ def _safe_mark(symbol: str) -> tuple[Optional[float], str]:
     except Exception:
         return None, "NONE"
 
-def _safe_ohlc(symbol: str) -> Optional[List[List[float]]]:
-    # usa 4h (painel Swing/PRO)
+def _safe_klines_1h(symbol: str) -> Optional[List[List[float]]]:
     try:
-        return binance_klines(symbol, interval="4h", limit=220)
+        return binance_klines(symbol, interval="1h", limit=260)
     except Exception:
         return None
 
-# ===== TOP10 (ranking por pontuação de cores) =====
+def _safe_klines_4h(symbol: str) -> Optional[List[List[float]]]:
+    try:
+        return binance_klines(symbol, interval="4h", limit=260)
+    except Exception:
+        return None
+
+def _norm(s: str) -> str:
+    return str(s or "").upper().replace("É","E").replace("Í","I").replace("Ó","O").replace("Á","A").replace("Ã","A").replace("Ç","C")
+
 def _pts_zona(z: str) -> int:
-    z = str(z or "").upper()
-    if z == "ALTA":
-        return 3
-    if z in ("MÉDIA", "MEDIA"):
-        return 2
-    return 1  # ALTA
+    z = _norm(z)
+    if z == "ALTA": return 3
+    if z == "MEDIA": return 2
+    return 1
 
 def _pts_risco(r: str) -> int:
-    r = str(r or "").upper()
-    if r == "BAIXO":
-        return 3
-    if r in ("MÉDIO", "MEDIO"):
-        return 2
-    return 1  # ALTO
+    r = _norm(r)
+    if r == "BAIXO": return 3
+    if r == "MEDIO": return 2
+    return 1
 
-def _pts_prioridade(p: str) -> int:
-    p = str(p or "").upper()
-    if p == "ALTA":
-        return 3
-    if p in ("MÉDIA", "MEDIA"):
-        return 2
-    return 1  # BAIXA
+def _pts_prio(p: str) -> int:
+    p = _norm(p)
+    if p == "ALTA": return 3
+    if p == "MEDIA": return 2
+    return 1
 
-
-def build_payload() -> Dict:
+def build_payload() -> Tuple[Dict, Dict]:
     updated_at = now_utc_iso()
     now_brt = now_brt_str()
-
-    # data/hora para colunas do painel
     _data, _hora = (now_brt.split(" ", 1) + [""])[:2]
-
 
     items = []
     ok_count = 0
@@ -94,73 +84,85 @@ def build_payload() -> Dict:
                 "par": par,
                 "side": "NÃO ENTRAR",
                 "atual": 0.0,
-                "alvo": 0.0,
-                "ganho_pct": 0.0,
-                "assert_pct": 0.0,
-                "prazo": "-",
-                "zona": "ALTA",
-                "risco": "ALTO",
-                "prioridade": "BAIXA",
+                "alvo": None,
+                "ganho_pct": None,
+                "assert_pct": None,
+                "prazo": "",
+                "zona": "",
+                "risco": "",
+                "prioridade": "",
+                "data": _data,
+                "hora": _hora,
                 "price_source": src,
             })
             continue
 
-        ohlc = _safe_ohlc(symbol)
+        ohlc_1h = _safe_klines_1h(symbol)
+        ohlc_4h = _safe_klines_4h(symbol)
+
         if (not ohlc_1h) or (not ohlc_4h):
             miss_count += 1
             items.append({
                 "par": par,
                 "side": "NÃO ENTRAR",
                 "atual": float(mark),
-                "alvo": float(mark),
-                "ganho_pct": 0.0,
-                "assert_pct": 0.0,
-                "prazo": "-",
-                "zona": "ALTA",
-                "risco": "ALTO",
-                "prioridade": "BAIXA",
+                "alvo": None,
+                "ganho_pct": None,
+                "assert_pct": None,
+                "prazo": "",
+                "zona": "",
+                "risco": "",
+                "prioridade": "",
+                "data": _data,
+                "hora": _hora,
                 "price_source": src,
             })
             continue
 
-        sig = build_signal(par=par, ohlc_1h=ohlc_1h, ohlc_4h=ohlc_4h, mark_price=float(mark), gain_min_pct=float(GAIN_MIN_PCT), assert_min_pct=float(ASSERT_MIN_PCT))
+        sig = build_signal(
+            par=par,
+            ohlc_1h=ohlc_1h,
+            ohlc_4h=ohlc_4h,
+            mark_price=float(mark),
+            gain_min_pct=float(GAIN_MIN_PCT),
+            assert_min_pct=float(ASSERT_MIN_PCT),
+        )
 
         if sig.side == "NÃO ENTRAR":
-    items.append({
-        "par": sig.par,
-        "side": "NÃO ENTRAR",
-        "atual": float(sig.atual),
-        "data": _data,
-        "hora": _hora,
-        # demais colunas devem ficar vazias quando NÃO ENTRAR
-        "ganho_pct": None,
-        "assert_pct": None,
-        "alvo": None,
-        "prazo": "",
-        "zona": "",
-        "risco": "",
-        "prioridade": "",
-        "price_source": src,
-    })
-else:
-    items.append({
-        "par": sig.par,
-        "side": sig.side,
-        "atual": float(sig.atual),
-        "alvo": float(sig.alvo),
-        "ganho_pct": float(sig.ganho_pct),
-        "assert_pct": float(sig.assert_pct),
-        "prazo": sig.prazo,
-        "zona": sig.zona,
-        "risco": sig.risco,
-        "prioridade": sig.prioridade,
-        "data": _data,
-        "hora": _hora,
-        "price_source": src,
-    })
-        ok_count += 1
+            items.append({
+                "par": sig.par,
+                "side": "NÃO ENTRAR",
+                "atual": float(sig.atual),
+                "alvo": None,
+                "ganho_pct": None,
+                "assert_pct": None,
+                # ✅ regra oficial: vazio nessas colunas
+                "prazo": "",
+                "zona": "",
+                "risco": "",
+                "prioridade": "",
+                "data": _data,
+                "hora": _hora,
+                "price_source": src,
+            })
+        else:
+            items.append({
+                "par": sig.par,
+                "side": sig.side,
+                "atual": float(sig.atual),
+                "alvo": float(sig.alvo),
+                "ganho_pct": float(sig.ganho_pct),
+                "assert_pct": float(sig.assert_pct),
+                "prazo": sig.prazo,
+                "zona": sig.zona,
+                "risco": sig.risco,
+                "prioridade": sig.prioridade,
+                "data": _data,
+                "hora": _hora,
+                "price_source": src,
+            })
+            ok_count += 1
 
-    # ordena por par (alfabético)
     items.sort(key=lambda x: (x.get("par") or ""))
 
     payload = {
@@ -170,188 +172,49 @@ else:
         "now_brt": now_brt,
         "items": items,
     }
-    # top10: NOVA REGRA (ranking por pontuação de cores)
-    # top10: NOVA REGRA (PONTOS/CORES)
-    # - entra no ranking: LONG/SHORT e GANHO >= GAIN_MIN_PCT
-    # - ordena: PONTOS(desc) -> ASSERT(desc) -> GANHO(desc) -> PAR(asc)
-    def _norm(x):
-        return str(x or "").upper().replace("É","E").replace("Í","I").replace("Ó","O").replace("Á","A").replace("Ã","A").replace("Ç","C")
 
-    def _pts_zone(z):
-        z=_norm(z)
-        if z=="ALTA": return 3
-        if z=="MEDIA": return 2
-        return 1  # BAIXA/qualquer
-        r=_norm(r)
-        if r=="BAIXO": return 3
-        if r=="MEDIO": return 2
-        return 1  # ALTO/qualquer
+    # TOP10: pontos -> assert -> ganho -> par
+    cand = []
+    for it in items:
+        if it.get("side") not in ("LONG", "SHORT"):
+            continue
+        g = float(it.get("ganho_pct") or 0.0)
+        a = float(it.get("assert_pct") or 0.0)
+        if g < float(GAIN_MIN_PCT):
+            continue
+        if a < float(ASSERT_MIN_PCT):
+            continue
+        pts = _pts_zona(it.get("zona")) + _pts_risco(it.get("risco")) + _pts_prio(it.get("prioridade"))
+        it2 = dict(it)
+        it2["rank_pts"] = int(pts)  # debug
+        cand.append(it2)
 
-    def _pts_prio(p):
-        p=_norm(p)
-        if p=="ALTA": return 3
-        if p=="MEDIA": return 2
-        return 1  # BAIXA/qualquer
-
-    def _top10_select(items):
-        cand=[]
-        for it in items:
-            if it.get("side") not in ("LONG","SHORT"):
-                continue
-            ganho=float(it.get("ganho_pct") or 0.0)
-            if ganho < float(GAIN_MIN_PCT):
-                continue
-            a=float(it.get("assert_pct") or 0.0)
-            if a < float(ASSERT_MIN_PCT):
-                continue
-
-            pts = _pts_zone(it.get("zona")) + _pts_risco(it.get("risco")) + _pts_prio(it.get("prioridade"))
-            it2 = dict(it)
-            it2["rank_pts"] = int(pts)  # debug (nao quebra o painel)
-            cand.append(it2)
-
-        cand.sort(key=lambda x: (
-            -int(x.get("rank_pts") or 0),
-            -float(x.get("assert_pct") or 0.0),
-            -float(x.get("ganho_pct") or 0.0),
-            str(x.get("par") or "")
-        ))
-        return cand[:10]
-
-    top_items = _top10_select(items)
+    cand.sort(key=lambda x: (
+        -int(x.get("rank_pts") or 0),
+        -float(x.get("assert_pct") or 0.0),
+        -float(x.get("ganho_pct") or 0.0),
+        str(x.get("par") or "")
+    ))
     top10 = {
         "ok": True,
         "source": "local",
         "updated_at": updated_at,
         "now_brt": now_brt,
-        "items": top_items,
+        "items": cand[:10],
     }
-    # auditoria prática (não pode derrubar o worker)
-    try:
-        log_prices(top_items, updated_at=updated_at)
-        log_signals(top_items, updated_at=updated_at, gain_min_pct=float(GAIN_MIN_PCT))
-    except Exception:
-        pass
 
-    log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count}")
+    log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count} gain_min={GAIN_MIN_PCT} assert_min={ASSERT_MIN_PCT}")
     return payload, top10
 
-# ===== TOP10 (regra por cores) =====
-def _col_gain(ganho_pct: float) -> str:
-    return "G" if float(ganho_pct or 0.0) >= float(GAIN_MIN_PCT) else "R"
-
-def _col_assert(assert_pct: float) -> str:
-    a = float(assert_pct or 0.0)
-    if a <= 0.0:
-        return "R"  # sem dado
-    return "G" if a >= 65.0 else "Y"  # sua regra: <65 = amarelo
-
-
-def _col_zona(z: str) -> str:
-    z = str(z or "").upper()
-    if z == "BAIXA":
-        return "G"
-    if z in ("MÉDIA","MEDIA"):
-        return "Y"
-    return "R"  # ALTA
-
-def _col_risco(r: str) -> str:
-    r = str(r or "").upper()
-    if r == "BAIXO": return "G"
-    if r in ("MÉDIO","MEDIO"): return "Y"
-    return "R"  # ALTO
-
-def _col_prioridade(p: str) -> str:
-    p = str(p or "").upper()
-    if p == "ALTA": return "G"
-    if p in ("MÉDIA","MEDIA"): return "Y"
-    return "R"  # BAIXA
-
-def main_loop() -> None:
-    log(f"START | OUT_FILE={OUT_FILE} | TOP10_FILE={TOP10_FILE} | INTERVAL_S={INTERVAL_S} | COINS={len(COINS)}")
+def main():
     while True:
         try:
             payload, top10 = build_payload()
             atomic_write_json(OUT_FILE, payload)
             atomic_write_json(TOP10_FILE, top10)
-            log("WROTE pro.json + top10.json")
         except Exception as e:
-            log(f"ERROR: {type(e).__name__}: {e}")
+            log(f"ERRO: {e}")
         time.sleep(INTERVAL_S)
 
 if __name__ == "__main__":
-    main_loop()
-
-def _top10_select(items):
-    """
-    TOP10 por PONTUAÇÃO (cores/níveis):
-      ZONA:  ALTA=3, MÉDIA=2, BAIXA=1
-      RISCO: BAIXO=3, MÉDIO=2, ALTO=1
-      PRIORIDADE: ALTA=3, MÉDIA=2, BAIXA=1
-    Desempate: maior ASSERT%, depois maior GANHO%
-    """
-    def _norm(s):
-        s = (s or "").strip().upper()
-        s = (s.replace("É","E").replace("Ê","E").replace("Á","A").replace("À","A")
-              .replace("Ã","A").replace("Â","A").replace("Í","I").replace("Ó","O")
-              .replace("Õ","O").replace("Ô","O").replace("Ú","U").replace("Ç","C"))
-        return s
-
-    def _pts_zona(z):
-        z = _norm(z)
-        if z == "ALTA": return 3
-        if z == "MEDIA": return 2
-        if z == "BAIXA": return 1
-        return 0
-
-    def _pts_risco(r):
-        r = _norm(r)
-        if r == "BAIXO": return 3
-        if r == "MEDIO": return 2
-        if r == "ALTO": return 1
-        return 0
-
-
-    _pts_risk = _pts_risco  # alias (mesma função)
-
-
-    _pts_risk = _pts_risco  # alias (mesma função)
-
-    def _pts_prio(p):
-        p = _norm(p)
-        if p == "ALTA": return 3
-        if p == "MEDIA": return 2
-        if p == "BAIXA": return 1
-        return 0
-
-        rows = []
-
-        for it in (items or []):
-
-            if not isinstance(it, dict):
-
-                continue
-
-            side = _norm(it.get('side'))
-
-            if side not in ('LONG','SHORT'):
-
-                continue
-
-            ganho = float(it.get('ganho_pct') or 0.0)
-
-            if ganho < float(GAIN_MIN_PCT):
-
-                continue
-
-            ass = float(it.get('assert_pct') or 0.0)
-
-            pts = _pts_zona(it.get('zona')) + _pts_risco(it.get('risco')) + _pts_prio(it.get('prioridade'))
-
-            par = str(it.get('par') or '')
-
-            rows.append((pts, ass, ganho, par, it))
-
-        rows.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
-
-        return [it for _,_,_,_,it in rows[:10]]
+    main()
