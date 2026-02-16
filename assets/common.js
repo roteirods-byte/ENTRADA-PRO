@@ -153,8 +153,8 @@ function normalizeItems(items, fallbackIso) {
 }
 
 // ===== Cores =====
-const GAIN_OK = 3.0;
-const ASSERT_OK = 65.0;
+const GAIN_OK = 2.0;
+const ASSERT_OK = 55.0;
 
 function gainClass(v) {
   const n = toNum(v);
@@ -316,7 +316,7 @@ function renderTable(kind, items) {
         return `<td class="">${_pv ?? ''}</td>`;
       }
 
-    if (_isNo && ['prazo','zona','risco','prioridade'].includes(key)) {
+   if (_isNo && ['prazo','zona','risco','prioridade'].includes(key)) {
   return `<td class="">${''}</td>`;
 }
 
