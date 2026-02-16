@@ -46,10 +46,21 @@ def _first_existing(paths: list[Path]) -> Path | None:
 # --- DATA DIR (compartilhado com a API no mesmo container) ---
 DATA_DIR = os.environ.get("DATA_DIR", str(REPO_DIR / "data")).strip()
 
-# --- parâmetros ---
-GAIN_MIN_PCT = float(os.environ.get("GAIN_MIN_PCT", "3").strip())
-ASSERT_MIN_PCT = float(os.environ.get("ASSERT_MIN_PCT", "65").strip())
+# defaults
+_default_gain = 3.0
+_default_assert = 65.0
 
+# settings.json vira o default (env ainda pode sobrescrever)
+try:
+    _s = _load_json(WORKER_DIR / "config" / "settings.json")
+    if isinstance(_s, dict):
+        _default_gain = float(_s.get("gain_min_pct", _default_gain))
+        _default_assert = float(_s.get("assert_min_pct", _default_assert))
+except Exception:
+    pass
+
+GAIN_MIN_PCT = float(os.environ.get("GAIN_MIN_PCT", str(_default_gain)).strip())
+ASSERT_MIN_PCT = float(os.environ.get("ASSERT_MIN_PCT", str(_default_assert)).strip())
 
 # --- COINS FILE: tenta vários lugares; se não achar, usa DEFAULT_COINS ---
 ENV_COINS_FILE = os.environ.get("COINS_FILE", "").strip()
