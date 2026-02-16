@@ -316,9 +316,9 @@ function renderTable(kind, items) {
         return `<td class="">${_pv ?? ''}</td>`;
       }
 
-      if (_isNo && ['alvo','ganho_pct','assert_pct','prazo','zona','risco','prioridade'].includes(key)) {
-        return `<td class="">${''}</td>`;
-      }
+    if (_isNo && ['prazo','zona','risco','prioridade'].includes(key)) {
+  return `<td class="">${''}</td>`;
+}
 
       const raw = (it && typeof it === 'object') ? it[key] : undefined;
       let text = '-';
