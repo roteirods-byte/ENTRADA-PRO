@@ -17,7 +17,7 @@ WORKER_DIR = ENGINE_DIR.parent                       # /app/worker
 REPO_DIR = WORKER_DIR.parent                         # /app
 
 
-# --- defaults (39 moedas) ---
+# --- defaults (78 moedas) ---
 DEFAULT_COINS = [
     "AAVE","ADA","APE","APT","AR","ARB","ATOM","AVAX","AXS","BAT","BCH","BLUR",
     "BNB","BONK","BTC","COMP","CRV","DASH","DENT","DGB","DOGE","DOT","EGLD","EOS",
@@ -46,31 +46,11 @@ def _first_existing(paths: list[Path]) -> Path | None:
 # --- DATA DIR (compartilhado com a API no mesmo container) ---
 DATA_DIR = os.environ.get("DATA_DIR", str(REPO_DIR / "data")).strip()
 
-# defaults
-_default_gain = 3.0
-_default_assert = 65.0
+# defaults do projeto ENTRADA-PRO (filtros oficiais: 2% e 55%)
+_default_gain = 2.0
+_default_assert = 55.0
 
 # settings.json vira o default (env ainda pode sobrescrever)
-try:
-    _s = _load_json(WORKER_DIR / "config" / "settings.json")
-    if isinstance(_s, dict):
-        _default_gain = float(_s.get("gain_min_pct", _default_gain))
-        _default_assert = float(_s.get("assert_min_pct", _default_assert))
-except Exception:
-    pass
-
-_default_gain = 3.0
-_default_assert = 65.0
-try:
-    _s = _load_json(WORKER_DIR / "config" / "settings.json")
-    if isinstance(_s, dict):
-        _default_gain = float(_s.get("gain_min_pct", _default_gain))
-        _default_assert = float(_s.get("assert_min_pct", _default_assert))
-except Exception:
-    pass
-
-_default_gain = 3.0
-_default_assert = 65.0
 try:
     _s = _load_json(WORKER_DIR / "config" / "settings.json")
     if isinstance(_s, dict):
@@ -82,10 +62,11 @@ except Exception:
 GAIN_MIN_PCT = float(os.environ.get("GAIN_MIN_PCT", str(_default_gain)).strip())
 ASSERT_MIN_PCT = float(os.environ.get("ASSERT_MIN_PCT", str(_default_assert)).strip())
 
+
 # --- COINS FILE: tenta vários lugares; se não achar, usa DEFAULT_COINS ---
 ENV_COINS_FILE = os.environ.get("COINS_FILE", "").strip()
 
-COINS_FILE_CANDIDATES = []
+COINS_FILE_CANDIDATES: list[Path] = []
 if ENV_COINS_FILE:
     COINS_FILE_CANDIDATES.append(Path(ENV_COINS_FILE))
 

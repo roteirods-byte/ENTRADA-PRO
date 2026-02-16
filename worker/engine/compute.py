@@ -21,6 +21,7 @@ class Signal:
     prioridade: str
     zona: str
     price_source: str  # MARK
+    nao_entrar_motivo: str = ""  # interno (audit)
 
 def _fmt_prazo(hours_min: float, hours_max: float) -> str:
     # PRAZO como número (horas) para variar por moeda
@@ -188,10 +189,22 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
             atr_val = float(atr1)
 
     if atr_val <= 0 or side_final == "NÃO ENTRAR":
-        # ainda mostramos zona/risco/prioridade (para o painel não ficar "vazio")
-        atr_pct = (atr4 / max(1e-9, atual)) if atr4 > 0 else 0.0
-        risco, prioridade, zona = classify_levels(atr_pct, 0.0, "NÃO ENTRAR", side24)
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
+        # Regra oficial: quando NÃO ENTRAR, não preencher PRAZO/ZONA/RISCO/PRIORIDADE.
+        # Ainda assim, registramos motivo interno para auditoria.
+        if atr_val <= 0:
+            motivo = "sem_atr"
+        else:
+            if side1 == "NÃO ENTRAR" or side4 == "NÃO ENTRAR":
+                motivo = "sem_setup"
+            else:
+                motivo = "sem_confluencia"
+        return Signal(
+            par, "NÃO ENTRAR", "PRO",
+            entrada, atual, atual,
+            0.0, "", 0.0,
+            "", "", "", "MARK",
+            motivo,
+        )
 
     # alvo / ganho (regra oficial)
     target_dist = 1.5 * atr_val
@@ -201,12 +214,6 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
         alvo = atual - target_dist
 
     ganho_pct = abs(alvo - atual) / max(1e-9, atual) * 100.0
-
-    # filtro único de ganho
-    if ganho_pct < float(gain_min_pct):
-        atr_pct = atr_val / max(1e-9, atual)
-        risco, prioridade, zona = classify_levels(atr_pct, 0.0, "NÃO ENTRAR", side24)
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
 
     # prazo estimado (base no ritmo médio do gráfico escolhido)
     atr_pct = atr_val / max(1e-9, atual)
@@ -230,10 +237,37 @@ def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]
 
     assert_pct = mfe_mae_assert(use_ohlc, side_final, target_dist, atr_val, lookahead=12)
 
-    # filtro oficial de ASSERT
-    if float(assert_pct or 0.0) < float(assert_min_pct):
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
+    # decisão final (mantendo GANHO% e ASSERT% mesmo quando NÃO ENTRAR)
+    motivo = ""
+    side_out = side_final
+    g_ok = float(ganho_pct or 0.0) >= float(gain_min_pct)
+    a_ok = float(assert_pct or 0.0) >= float(assert_min_pct)
 
-    risco, prioridade, zona = classify_levels(atr_pct, ganho_pct, side_final, side24)
+    if not g_ok and not a_ok:
+        side_out = "NÃO ENTRAR"
+        motivo = f"ganho<{float(gain_min_pct):g}+assert<{float(assert_min_pct):g}"
+    elif not g_ok:
+        side_out = "NÃO ENTRAR"
+        motivo = f"ganho<{float(gain_min_pct):g}"
+    elif not a_ok:
+        side_out = "NÃO ENTRAR"
+        motivo = f"assert<{float(assert_min_pct):g}"
 
-    return Signal(par, side_final, "PRO", entrada, atual, alvo, ganho_pct, prazo, assert_pct, risco, prioridade, zona, "MARK")
+    if side_out == "NÃO ENTRAR":
+        return Signal(
+            par, "NÃO ENTRAR", "PRO",
+            entrada, atual, alvo,
+            float(ganho_pct), "", float(assert_pct),
+            "", "", "", "MARK",
+            motivo,
+        )
+
+    risco, prioridade, zona = classify_levels(atr_pct, ganho_pct, side_out, side24)
+
+    return Signal(
+        par, side_out, "PRO",
+        entrada, atual, alvo,
+        float(ganho_pct), prazo, float(assert_pct),
+        risco, prioridade, zona, "MARK",
+        "",
+    )
