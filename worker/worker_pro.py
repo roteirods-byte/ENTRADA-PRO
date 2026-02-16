@@ -109,6 +109,13 @@ def build_payload():
             gain_min_pct=float(GAIN_MIN_PCT), assert_min_pct=float(ASSERT_MIN_PCT)
         )
 
+# ✅ filtro oficial FINAL (não depende de env)
+if sig.side in ("LONG", "SHORT"):
+    g = float(sig.ganho_pct or 0.0)
+    a = float(sig.assert_pct or 0.0)
+    if g < float(GAIN_MIN_PCT) or a < float(ASSERT_MIN_PCT):
+        sig.side = "NÃO ENTRAR"
+        
         if sig.side == "NÃO ENTRAR":
             items.append({
                 "par": sig.par, "side": "NÃO ENTRAR",
