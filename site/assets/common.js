@@ -257,8 +257,8 @@ async function load(kind) {
   if (slot.data && age < CACHE_TTL_MS) return { ok: true, source: 'cache', raw: slot.data };
    
 const urlList = (kind === 'top10')
-  ? ['/api/top10', '/top10']
-  : ['/api/pro', '/pro'];
+  ? ['/api/top10']
+  : ['/api/pro'];
 
 const json = await fetchWithFallback(urlList);
 
@@ -315,7 +315,7 @@ function renderTable(kind, items) {
   if (!tbody) return;
 
   const rows = Array.isArray(items) ? items : [];
-  const KEEP_NOENTER = new Set(['par','side','atual','alvo','ganho_pct','assert_pct','data','hora']);
+  const KEEP_NOENTER = new Set(['par','side','atual','ganho_pct','assert_pct','data','hora']);
 
   const html = rows.map(it => {
     const sideRaw = fmtText((it && typeof it === 'object') ? it['side'] : '')

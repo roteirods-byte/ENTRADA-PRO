@@ -1,252 +1,186 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# worker/worker_pro.py
+# Gera data/pro.json e data/top10.json para o painel ENTRADA-PRO (FULL + TOP10)
 
-"""ENTRADA-PRO Worker.
-
-Gera /opt/ENTRADA-PRO/data/pro.json e /opt/ENTRADA-PRO/data/top10.json.
-
-Regras (projeto):
-1) SIDE/ATUAL/ALVO/GANHO%/ASSERT%/DATA/HORA sempre preenchidos (inclusive em NÃO ENTRAR).
-2) PRAZO/ZONA/RISCO/PRIORIDADE ficam vazios quando NÃO ENTRAR.
-3) Campos sempre presentes: price_source, nao_entrar_motivo, ttl_expira_em.
-"""
-
-from __future__ import annotations
-
+import json
 import os
-import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple
+from zoneinfo import ZoneInfo
 
-from engine.config import (
-    COINS,
-    DATA_DIR,
-    LOOP_SECONDS,
-    TOP10_LIMIT,
-)
-from engine.exchanges import (
-    bybit_mark_last,
-    binance_mark_last,
-    binance_ohlc_1h,
-)
-from engine.indicators import atr_from_ohlc
+from engine.config import load_settings, get_thresholds, get_coins
+from engine.exchanges import fetch_mark_price, fetch_klines
 from engine.compute import build_signal
-from engine.io import atomic_write_json, ensure_dir
 
-
-TTL_SECONDS = 60 * 10  # 10 min
-
-
-def now_utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def now_brt_dt() -> datetime:
-    # BRT fixa (-03:00)
-    return datetime.now(timezone(timedelta(hours=-3)))
-
-
-def now_brt_str() -> str:
-    return now_brt_dt().strftime("%Y-%m-%d %H:%M")
-
+DATA_DIR = os.getenv("DATA_DIR", "/opt/ENTRADA-PRO/data")
+TZ_BRT = ZoneInfo("America/Sao_Paulo")
 
 def _sym(par: str) -> str:
+    # sem USDT na planilha; mas no exchange o símbolo é <PAR>USDT
     return f"{par}USDT"
 
+def _now_brt():
+    dt = datetime.now(TZ_BRT)
+    return dt, dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
 
-def _safe_mark(symbol: str) -> Tuple[float | None, str]:
-    """Retorna (mark, source). Preferência: BYBIT -> BINANCE."""
-    for fn, src in ((bybit_mark_last, "BYBIT"), (binance_mark_last, "BINANCE")):
+def _ttl_iso(minutes: int = 6) -> str:
+    return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat().replace("+00:00", "Z")
+
+def _safe_mark(symbol: str) -> Tuple[float, str]:
+    # tenta BYBIT primeiro, depois BINANCE
+    for src in ("BYBIT", "BINANCE"):
         try:
-            v = fn(symbol)
-            if v is not None and float(v) > 0:
-                return float(v), src
+            px = fetch_mark_price(symbol, source=src, timeout=5)
+            if px is not None and px > 0:
+                return float(px), src
+        except Exception:
+            pass
+    return 0.0, "NONE"
+
+def _safe_klines(symbol: str, interval: str, limit: int = 120):
+    for src in ("BYBIT", "BINANCE"):
+        try:
+            kl = fetch_klines(symbol, interval=interval, limit=limit, source=src, timeout=8)
+            if kl and len(kl) >= 20:
+                return kl, src
         except Exception:
             pass
     return None, "NONE"
 
-
-def _priority_rank(p: str) -> int:
-    p = (p or "").strip().upper()
-    if p == "ALTA":
-        return 3
-    if p in ("MEDIA", "MÉDIA"):
-        return 2
-    if p == "BAIXA":
-        return 1
-    return 0
-
-
-def _mk_item(
-    *,
-    par: str,
-    side: str,
-    atual: float,
-    alvo: float,
-    ganho_pct: float,
-    assert_pct: float,
-    prazo: str,
-    zona: str,
-    risco: str,
-    prioridade: str,
-    date_str: str,
-    time_str: str,
-    price_source: str,
-    nao_entrar_motivo: str | None,
-    ttl_expira_em: str,
-) -> Dict:
+def _mk_item(par: str, side: str, atual: float, alvo: float, ganho_pct: float, assert_pct: float,
+             data: str, hora: str, prazo: str, zona: str, risco: str, prioridade: str,
+             price_source: str, nao_entrar_motivo: str, ttl_expira_em: str) -> Dict:
+    # GARANTIA: chaves sempre existem e números nunca são None
     return {
         "par": par,
         "side": side,
-        "atual": float(atual),
-        "alvo": float(alvo),
-        "ganho_pct": float(ganho_pct),
-        "assert_pct": float(assert_pct),
-        "prazo": prazo,
-        "zona": zona,
-        "risco": risco,
-        "prioridade": prioridade,
-        "data": date_str,
-        "hora": time_str,
-        "price_source": price_source,
+        "atual": float(atual or 0.0),
+        "alvo": float(alvo or 0.0),
+        "ganho_pct": float(ganho_pct or 0.0),
+        "assert_pct": float(assert_pct or 0.0),
+        "data": data,
+        "hora": hora,
+        "prazo": prazo or "",
+        "zona": zona or "",
+        "risco": risco or "",
+        "prioridade": prioridade or "",
+        "price_source": price_source or "NONE",
         "nao_entrar_motivo": nao_entrar_motivo,
         "ttl_expira_em": ttl_expira_em,
     }
 
-
 def build_payload() -> Dict:
-    brt = now_brt_dt()
-    date_str = brt.strftime("%Y-%m-%d")
-    time_str = brt.strftime("%H:%M")
+    settings = load_settings()
+    gain_min, assert_min = get_thresholds(settings)
+    coins = get_coins(settings)
 
-    updated_at = now_utc_iso()
-    ttl_expira_em = (datetime.now(timezone.utc) + timedelta(seconds=TTL_SECONDS)).isoformat().replace("+00:00", "Z")
+    dt_brt, date_brt, time_brt = _now_brt()
+    ttl = _ttl_iso(6)
 
     items: List[Dict] = []
+    miss_mark = 0
+    miss_kl = 0
 
-    for par in COINS:
+    for par in coins:
         symbol = _sym(par)
-        mark, src = _safe_mark(symbol)
 
-        if mark is None:
-            # Sem preço: ainda assim preenche colunas obrigatórias
-            items.append(
-                _mk_item(
-                    par=par,
-                    side="NÃO ENTRAR",
-                    atual=0.0,
-                    alvo=0.0,
-                    ganho_pct=0.0,
-                    assert_pct=0.0,
-                    prazo="",
-                    zona="",
-                    risco="",
-                    prioridade="",
-                    date_str=date_str,
-                    time_str=time_str,
-                    price_source=src,
-                    nao_entrar_motivo="sem_mark",
-                    ttl_expira_em=ttl_expira_em,
-                )
-            )
+        mark, mark_src = _safe_mark(symbol)
+        if mark <= 0:
+            miss_mark += 1
+            items.append(_mk_item(
+                par=par, side="NÃO ENTRAR",
+                atual=0.0, alvo=0.0, ganho_pct=0.0, assert_pct=0.0,
+                data=date_brt, hora=time_brt,
+                prazo="", zona="", risco="", prioridade="",
+                price_source=mark_src, nao_entrar_motivo="sem_mark", ttl_expira_em=ttl
+            ))
             continue
 
-        # OHLC (para ATR e assertividade). Se falhar, entra vazio e o build_signal cai em 0.
-        try:
-            ohlc = binance_ohlc_1h(symbol, limit=240)  # ~10 dias
-        except Exception:
-            ohlc = []
+        k1, src1 = _safe_klines(symbol, "1h", 120)
+        k4, src4 = _safe_klines(symbol, "4h", 120)
+        if not k1 or not k4:
+            miss_kl += 1
+            items.append(_mk_item(
+                par=par, side="NÃO ENTRAR",
+                atual=mark, alvo=mark, ganho_pct=0.0, assert_pct=0.0,
+                data=date_brt, hora=time_brt,
+                prazo="", zona="", risco="", prioridade="",
+                price_source=mark_src, nao_entrar_motivo="sem_klines", ttl_expira_em=ttl
+            ))
+            continue
 
-        # ATRs (em preço)
-        atr1 = atr_from_ohlc(ohlc, 1)
-        atr4 = atr_from_ohlc(ohlc, 4)
-        atr24 = atr_from_ohlc(ohlc, 24)
-
-        sig = build_signal(par, ohlc, float(mark), float(atr1), float(atr4), float(atr24))
-
-        motivo = None
-        if sig.side == "NÃO ENTRAR":
-            motivo = "filtro"  # mantém simples e estável
-
-        items.append(
-            _mk_item(
-                par=par,
-                side=sig.side,
-                atual=float(sig.atual),
-                alvo=float(sig.alvo),
-                ganho_pct=float(sig.ganho_pct),
-                assert_pct=float(sig.assert_pct),
-                prazo=sig.prazo,
-                zona=sig.zona,
-                risco=sig.risco,
-                prioridade=sig.prioridade,
-                date_str=date_str,
-                time_str=time_str,
-                price_source=src,
-                nao_entrar_motivo=motivo,
-                ttl_expira_em=ttl_expira_em,
-            )
+        # Compute signal (always returns numeric alvo/ganho/assert even if NÃO ENTRAR)
+        sig = build_signal(
+            par=par,
+            ohlc_1h=k1,
+            ohlc_4h=k4,
+            mark_price=mark,
+            gain_min_pct=gain_min,
+            assert_min_pct=assert_min,
         )
 
+        # Decide motivo quando NÃO ENTRAR
+        motivo = None
+        if sig.side == "NÃO ENTRAR":
+            g = float(getattr(sig, "ganho_pct", 0.0) or 0.0)
+            a = float(getattr(sig, "assert_pct", 0.0) or 0.0)
+            if g < float(gain_min):
+                motivo = "gain_min"
+            elif a < float(assert_min):
+                motivo = "assert_min"
+            else:
+                motivo = "sem_sinal"
+
+        items.append(_mk_item(
+            par=par,
+            side=sig.side,
+            atual=sig.atual,
+            alvo=sig.alvo,
+            ganho_pct=sig.ganho_pct,
+            assert_pct=sig.assert_pct,
+            data=date_brt,
+            hora=time_brt,
+            prazo=sig.prazo if sig.side != "NÃO ENTRAR" else "",
+            zona=sig.zona if sig.side != "NÃO ENTRAR" else "",
+            risco=sig.risco if sig.side != "NÃO ENTRAR" else "",
+            prioridade=sig.prioridade if sig.side != "NÃO ENTRAR" else "",
+            price_source=mark_src,
+            nao_entrar_motivo=motivo,
+            ttl_expira_em=ttl,
+        ))
+
+    # Ordenar por PAR (estável para FULL)
+    items.sort(key=lambda x: x["par"])
+
     payload = {
-        "ok": True,
         "source": "local",
-        "updated_at": updated_at,
-        "now_brt": now_brt_str(),
+        "updated_at": dt_brt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "updated_at_brt": dt_brt.strftime("%Y-%m-%d %H:%M"),
+        "gain_min_pct": gain_min,
+        "assert_min_pct": assert_min,
+        "miss_mark": miss_mark,
+        "miss_klines": miss_kl,
         "items": items,
     }
     return payload
 
+def write_json(path: str, data: Dict):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, path)
 
-def build_top10(payload: Dict) -> Dict:
-    items = payload.get("items", [])
-    enterables = [x for x in items if x.get("side") in ("LONG", "SHORT")]
+def main():
+    payload = build_payload()
+    write_json(os.path.join(DATA_DIR, "pro.json"), payload)
 
-    # Ordenação: prioridade (ALTA>MEDIA>BAIXA) -> assert -> ganho
-    enterables.sort(
-        key=lambda x: (
-            _priority_rank(x.get("prioridade") or ""),
-            float(x.get("assert_pct") or 0.0),
-            float(x.get("ganho_pct") or 0.0),
-        ),
-        reverse=True,
-    )
-
-    top = enterables[: int(TOP10_LIMIT)]
-
-    return {
-        "ok": True,
-        "source": payload.get("source"),
-        "updated_at": payload.get("updated_at"),
-        "now_brt": payload.get("now_brt"),
-        "items": top,
-    }
-
-
-def main() -> None:
-    ensure_dir(DATA_DIR)
-
-    while True:
-        try:
-            payload = build_payload()
-            atomic_write_json(os.path.join(DATA_DIR, "pro.json"), payload)
-
-            top10 = build_top10(payload)
-            atomic_write_json(os.path.join(DATA_DIR, "top10.json"), top10)
-
-        except Exception as e:
-            # Não derruba o loop
-            try:
-                ensure_dir(DATA_DIR)
-                atomic_write_json(
-                    os.path.join(DATA_DIR, "worker_error.json"),
-                    {"ok": False, "error": str(e), "ts": now_utc_iso()},
-                )
-            except Exception:
-                pass
-
-        time.sleep(float(LOOP_SECONDS))
-
+    # TOP10: somente LONG/SHORT, ordenado por GANHO% desc, ASSERT% desc
+    ls = [x for x in payload["items"] if x.get("side") in ("LONG", "SHORT")]
+    ls.sort(key=lambda x: (float(x.get("ganho_pct") or 0.0), float(x.get("assert_pct") or 0.0)), reverse=True)
+    top10 = dict(payload)
+    top10["items"] = ls[:10]
+    write_json(os.path.join(DATA_DIR, "top10.json"), top10)
 
 if __name__ == "__main__":
     main()

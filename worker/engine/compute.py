@@ -144,63 +144,102 @@ def classify_levels(atr_pct: float, gain_pct: float, side_final: str, side_24h: 
 
 def build_signal(
     par: str,
-    ohlc_1h: List[Tuple[int, float, float, float, float]],
-    atual: float,
-    atr1: float,
-    atr4: float,
-    atr24: float,
-    gain_min: float = GAIN_MIN_PCT,
-    assert_min: float = ASSERT_MIN_PCT,
+    ohlc_1h: List[Tuple[float, float, float, float]],
+    ohlc_4h: List[Tuple[float, float, float, float]],
+    mark_price: float,
+    gain_min_pct: float,
+    assert_min_pct: float,
 ) -> Signal:
+    """Compute signal and metrics.
+
+    REGRAS DO PROJETO (IMPORTANTE):
+    - Mesmo quando for "NÃO ENTRAR", as colunas: SIDE, ATUAL, ALVO, GANHO %, ASSERT %, DATA, HORA
+      devem estar sempre preenchidas (com valores calculados).
+    - Quando for "NÃO ENTRAR", as colunas: PRAZO, ZONA, RISCO, PRIORIDADE devem ficar "zeradas" (vazias).
     """
-    Regras (projeto):
-    - Sempre preencher (mesmo em NÃO ENTRAR): SIDE, ATUAL, ALVO, GANHO %, ASSERT %, DATA, HORA (DATA/HORA vem do worker).
-    - Quando NÃO ENTRAR: PRAZO/ZONA/RISCO/PRIORIDADE ficam vazios/zerados.
-    - LONG/SHORT só quando passa filtros (gain_min e assert_min) e há concordância 1H/4H.
-    """
-    # 1) Seleção de ATR (prazo base) e direção bruta
-    atr_val = float(atr4 or 0.0) if float(atr4 or 0.0) > 0 else float(atr1 or 0.0)
-    prazo_base = "4h" if float(atr4 or 0.0) > 0 else "1h"
+    # Defensive
+    atual = float(mark_price or 0.0)
 
-    # Direções por janela
-    side1 = side_from_ohlc(ohlc_1h, 1)
-    side4 = side_from_ohlc(ohlc_1h, 4)
-    side24 = side_from_ohlc(ohlc_1h, 24)
+    # Side candidates from trend
+    side_1h = compute_trade_side(ohlc_1h)
+    side_4h = compute_trade_side(ohlc_4h)
 
-    def pick_candidate() -> str:
-        for s in (side1, side4, side24):
-            if s in ("LONG", "SHORT"):
-                return s
-        return "LONG"
+    # If timeframes disagree or no signal, treat as NÃO ENTRAR (still fill numeric columns)
+    if (side_1h != side_4h) or (side_1h == "NÃO ENTRAR"):
+        return Signal(
+            par=par,
+            side="NÃO ENTRAR",
+            atual=atual,
+            alvo=atual,
+            ganho_pct=0.0,
+            assert_pct=0.0,
+            prazo="",
+            zona="",
+            risco="",
+            prioridade="",
+        )
 
-    cand_side = pick_candidate()
+    side_candidate = side_4h  # agreed side
 
-    # 2) Cálculo sempre (mesmo se NÃO ENTRAR)
-    # alvo usa 1.5 * ATR (quando existe); se não existir, alvo=atual e ganho=0
+    # ATR calculations (need at least one)
+    atr1 = compute_atr(ohlc_1h, ATR_PERIOD)
+    atr4 = compute_atr(ohlc_4h, ATR_PERIOD)
+    atr_val = atr4 if atr4 > 0 else atr1
     if atr_val <= 0:
-        target_dist = 0.0
-    else:
-        target_dist = 1.5 * atr_val
+        return Signal(
+            par=par,
+            side="NÃO ENTRAR",
+            atual=atual,
+            alvo=atual,
+            ganho_pct=0.0,
+            assert_pct=0.0,
+            prazo="",
+            zona="",
+            risco="",
+            prioridade="",
+        )
 
-    if cand_side == "LONG":
-        alvo = atual + target_dist
-    elif cand_side == "SHORT":
-        alvo = atual - target_dist
-    else:
-        alvo = atual
+    # Target + gain (always computed when we have a candidate side + ATR)
+    target = compute_target_price(atual, atr_val, side_candidate, mode="atr4h")
+    gain_pct = compute_gain_pct(atual, target, side_candidate)
 
-    gain_pct = pct_gain(cand_side, atual, alvo)
-    assert_pct = mfe_mae_assert(ohlc_1h, cand_side, target_dist, atr_val) if target_dist > 0 else 0.0
+    # Assertiveness (always computed when we have a side candidate)
+    assert_pct = compute_assertiveness(par, side_candidate)
 
-    # 3) Decisão final de entrada (sem mudar os cálculos)
-    concorda = (side1 == side4) and (side1 in ("LONG", "SHORT"))
-    passa_filtros = (gain_pct >= float(gain_min)) and (assert_pct >= float(assert_min))
+    # Only enter if passes thresholds
+    passes = (gain_pct >= float(gain_min_pct)) and (assert_pct >= float(assert_min_pct))
 
-    if concorda and passa_filtros:
-        # ENTRAR: preenche tudo
-        prazo = _fmt_prazo(target_dist, atr_val, prazo_base)
-        risco, prioridade, zona = classify_levels(gain_pct, assert_pct, target_dist, atr_val)
-        return Signal(par, side1, "PRO", atual, atual, alvo, gain_pct, prazo, assert_pct, zona, risco, prioridade, "MARK")
+    if not passes:
+        # NÃO ENTRAR but keep calculated alvo/ganho/assert; blank the qualitative cols
+        return Signal(
+            par=par,
+            side="NÃO ENTRAR",
+            atual=atual,
+            alvo=float(target),
+            ganho_pct=float(gain_pct),
+            assert_pct=float(assert_pct),
+            prazo="",
+            zona="",
+            risco="",
+            prioridade="",
+        )
 
-    # NÃO ENTRAR: mantém ALVO/GANHO/ASSERT calculados, zera (vazio) PRAZO/ZONA/RISCO/PRIORIDADE
-    return Signal(par, "NÃO ENTRAR", "PRO", atual, atual, alvo, gain_pct, "", assert_pct, "", "", "", "MARK")
+    # Enterable: compute qualitative fields
+    prazo = compute_time_to_target(gain_pct)
+    zona = classify_levels(gain_pct, "ZONA")
+    risco = classify_levels(gain_pct, "RISCO")
+    prioridade = classify_levels(assert_pct, "PRIORIDADE")
+
+    return Signal(
+        par=par,
+        side=side_candidate,
+        atual=atual,
+        alvo=float(target),
+        ganho_pct=float(gain_pct),
+        assert_pct=float(assert_pct),
+        prazo=prazo,
+        zona=zona,
+        risco=risco,
+        prioridade=prioridade,
+    )
+

@@ -1,124 +1,36 @@
-from __future__ import annotations
-
+# engine/config.py
 import json
 import os
-from pathlib import Path
-from datetime import datetime, timezone
+from typing import List
 
-try:
-    from zoneinfo import ZoneInfo
-except Exception:
-    ZoneInfo = None
+# Default thresholds (can be overridden by settings.json)
+DEFAULT_GAIN_MIN_PCT = float(os.getenv("GAIN_MIN_PCT", "3"))
+DEFAULT_ASSERT_MIN_PCT = float(os.getenv("ASSERT_MIN_PCT", "65"))
 
-
-# --- paths base ---
-ENGINE_DIR = Path(__file__).resolve().parent          # /app/worker/engine
-WORKER_DIR = ENGINE_DIR.parent                       # /app/worker
-REPO_DIR = WORKER_DIR.parent                         # /app
-
-
-# --- defaults (39 moedas) ---
+# Default coins (can be overridden by settings.json)
 DEFAULT_COINS = [
-    "AAVE","ADA","APE","APT","AR","ARB","ATOM","AVAX","AXS","BAT","BCH","BLUR",
-    "BNB","BONK","BTC","COMP","CRV","DASH","DENT","DGB","DOGE","DOT","EGLD","EOS",
-    "ETC","ETH","FET","FIL","FLOKI","FLOW","FTM","GALA","GLM","GRT","HBAR","ICP",
-    "IMX","INJ","IOST","KAS","KAVA","KSM","LINK","LTC","MANA","MATIC","MKR","NEAR",
-    "NEO","OMG","ONT","OP","ORDI","PEPE","QNT","QTUM","RNDR","ROSE","RUNE","SAND",
-    "SEI","SHIB","SNX","SOL","STX","SUI","SUSHI","THETA","TIA","TRX","UNI","VET",
-    "XEM","XLM","XRP","XVS","ZEC","ZRX"
+  "AAVE","ADA","APE","APT","AR","ARB","ATOM","AVAX","AXS","BAT","BCH","BLUR","BNB","BONK","BTC","COMP","CRV","DOGE","DOT","DYDX",
+  "EGLD","EOS","ETH","FET","FIL","FTM","GALA","GRT","ICP","INJ","JTO","KAVA","KSM","LDO","LINK","LTC","MATIC","NEAR","OP",
+  "PEPE","POL","RATS","RENDER","RNDR","RUNE","SEI","SHIB","SOL","SUI","TIA","TON","TRX","UNI","WIF","XRP","XLM","XTZ"
 ]
 
-
-def _load_json(fp: Path):
-    return json.loads(fp.read_text(encoding="utf-8"))
-
-
-def _first_existing(paths: list[Path]) -> Path | None:
-    for p in paths:
-        try:
-            if p and p.exists() and p.is_file():
-                return p
-        except Exception:
-            pass
-    return None
-
-
-# --- DATA DIR (compartilhado com a API no mesmo container) ---
-DATA_DIR = os.environ.get("DATA_DIR", str(REPO_DIR / "data")).strip()
-
-# defaults
-_default_gain = 3.0
-_default_assert = 65.0
-
-# settings.json vira o default (env ainda pode sobrescrever)
-try:
-    _s = _load_json(WORKER_DIR / "config" / "settings.json")
-    if isinstance(_s, dict):
-        _default_gain = float(_s.get("gain_min_pct", _default_gain))
-        _default_assert = float(_s.get("assert_min_pct", _default_assert))
-except Exception:
-    pass
-
-_default_gain = 3.0
-_default_assert = 65.0
-try:
-    _s = _load_json(WORKER_DIR / "config" / "settings.json")
-    if isinstance(_s, dict):
-        _default_gain = float(_s.get("gain_min_pct", _default_gain))
-        _default_assert = float(_s.get("assert_min_pct", _default_assert))
-except Exception:
-    pass
-
-_default_gain = 3.0
-_default_assert = 65.0
-try:
-    _s = _load_json(WORKER_DIR / "config" / "settings.json")
-    if isinstance(_s, dict):
-        _default_gain = float(_s.get("gain_min_pct", _default_gain))
-        _default_assert = float(_s.get("assert_min_pct", _default_assert))
-except Exception:
-    pass
-
-GAIN_MIN_PCT = float(os.environ.get("GAIN_MIN_PCT", str(_default_gain)).strip())
-ASSERT_MIN_PCT = float(os.environ.get("ASSERT_MIN_PCT", str(_default_assert)).strip())
-
-# --- COINS FILE: tenta vários lugares; se não achar, usa DEFAULT_COINS ---
-ENV_COINS_FILE = os.environ.get("COINS_FILE", "").strip()
-
-COINS_FILE_CANDIDATES = []
-if ENV_COINS_FILE:
-    COINS_FILE_CANDIDATES.append(Path(ENV_COINS_FILE))
-
-COINS_FILE_CANDIDATES += [
-    WORKER_DIR / "config" / "coins.json",   # /app/worker/config/coins.json (recomendado)
-    REPO_DIR / "config" / "coins.json",     # /app/config/coins.json (compat)
-    REPO_DIR / "coins.json",
-]
-
-_fp = _first_existing(COINS_FILE_CANDIDATES)
-
-if _fp:
+def load_settings(path: str = None):
+    """Load optional settings.json (same dir as worker by default)."""
+    if path is None:
+        path = os.getenv("SETTINGS_JSON", "/opt/ENTRADA-PRO/config/settings.json")
     try:
-        obj = _load_json(_fp)
-        coins = obj.get("coins", obj.get("COINS", None))
-        if isinstance(coins, list) and len(coins) > 0:
-            COINS = [str(x).strip().upper() for x in coins if str(x).strip()]
-        else:
-            COINS = DEFAULT_COINS[:]
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
     except Exception:
-        COINS = DEFAULT_COINS[:]
-else:
-    COINS = DEFAULT_COINS[:]
+        return {}
 
+def get_thresholds(settings: dict):
+    gain = float(settings.get("gain_min_pct", DEFAULT_GAIN_MIN_PCT))
+    assert_min = float(settings.get("assert_min_pct", DEFAULT_ASSERT_MIN_PCT))
+    return gain, assert_min
 
-def now_utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def now_brt_str() -> str:
-    # BRT (America/Sao_Paulo)
-    if ZoneInfo:
-        dt = datetime.now(ZoneInfo("America/Sao_Paulo"))
-        return dt.strftime("%Y-%m-%d %H:%M")
-    # fallback simples
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+def get_coins(settings: dict) -> List[str]:
+    coins = settings.get("coins") or settings.get("COINS") or None
+    if coins and isinstance(coins, list) and all(isinstance(x,str) for x in coins):
+        return coins
+    return DEFAULT_COINS
