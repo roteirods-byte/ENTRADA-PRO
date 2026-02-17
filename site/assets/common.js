@@ -257,8 +257,9 @@ async function load(kind) {
   if (slot.data && age < CACHE_TTL_MS) return { ok: true, source: 'cache', raw: slot.data };
    
 const urlList = (kind === 'top10')
-  ? ['/api/top10', '/top10']
-  : ['/api/pro', '/pro'];
+  ? ['/api/top10']
+  : ['/api/pro'];
+// regra: sem fallback para /top10 ou /pro (evita instabilidade por fonte diferente/arquivo parcial)
 
 const json = await fetchWithFallback(urlList);
 
@@ -322,7 +323,14 @@ function renderTable(kind, items) {
       .toUpperCase()
       .replace('NAO', 'NÃO');
 
-    const isNoEnter = sideRaw.includes('NÃO ENTRAR');
+    const isNoEnter0 = sideRaw.includes('NÃO ENTRAR');
+
+    // Segurança extra: se vier LONG/SHORT mas não passar filtros (ganho>=2% e assert>=55%), força NÃO ENTRAR no painel
+    const g = Number((it && typeof it === 'object') ? it['ganho_pct'] : NaN);
+    const a = Number((it && typeof it === 'object') ? it['assert_pct'] : NaN);
+    const failsGate = (!isFinite(g) || g < MIN_GAIN_PCT) || (!isFinite(a) || a < MIN_ASSERT_PCT);
+    const isNoEnter = isNoEnter0 || ((sideRaw === 'LONG' || sideRaw === 'SHORT') && failsGate);
+
 
     return '<tr>' + cols.map(([_, key]) => {
       // REGRA: se NÃO ENTRAR, só mostra PAR,SIDE,ATUAL,GANHO%,ASSERT%,DATA,HORA
@@ -335,7 +343,11 @@ function renderTable(kind, items) {
       if (key === 'atual' || key === 'alvo') text = fmtPrice(raw);
       else if (key === 'ganho_pct') { text = fmtPct(raw); cls = gainClass(raw); }
       else if (key === 'assert_pct') { text = fmtPct(raw); cls = assertClass(raw); }
-      else if (key === 'side') { text = fmtText(raw).toUpperCase().replace('NAO', 'NÃO'); cls = sideClass(raw); }
+      else if (key === 'side') {
+        const s = isNoEnter ? 'NÃO ENTRAR' : fmtText(raw).toUpperCase().replace('NAO', 'NÃO');
+        text = s;
+        cls = sideClass(s);
+      }
       else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = zoneClass(raw); }
       else if (key === 'risco') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
       else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = priorityClass(raw); }
