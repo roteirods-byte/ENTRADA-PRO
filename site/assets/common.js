@@ -153,8 +153,9 @@ function normalizeItems(items, fallbackIso) {
 }
 
 // ===== Cores =====
-const GAIN_OK = 3.0;
-const ASSERT_OK = 65.0;
+// limiares do painel: serão atualizados dinamicamente a partir do JSON
+let GAIN_OK = 3.0;
+let ASSERT_OK = 65.0;
 
 function gainClass(v) {
   const n = toNum(v);
@@ -355,6 +356,12 @@ async function boot(kind) {
     if (!out.ok) throw new Error('load_error');
 
     const raw = out.raw || {};
+
+    // Atualiza limiares a partir do JSON (evita inconsistência entre engine e painel)
+    const gmin = toNum(raw.gain_min_pct);
+    const amin = toNum(raw.assert_min_pct);
+    if (Number.isFinite(gmin) && gmin > 0) GAIN_OK = gmin;
+    if (Number.isFinite(amin) && amin > 0) ASSERT_OK = amin;
     const itemsRaw = raw.items || raw || [];
     const updatedIso = (raw && raw.updated_at) ? String(raw.updated_at) : null;
 

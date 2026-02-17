@@ -1,110 +1,170 @@
 from __future__ import annotations
+
+"""engine/compute.py
+
+Objetivo: gerar os campos do JSON de forma consistente e aplicar as regras:
+
+- Só LONG/SHORT quando (ganho_pct >= gain_min_pct) e (assert_pct >= assert_min_pct)
+- Caso contrário: side = "NÃO ENTRAR" e PRAZO/ZONA/RISCO/PRIORIDADE devem ficar vazios ("")
+- Mesmo em "NÃO ENTRAR": ATUAL/ALVO/GANHO%/ASSERT% continuam numéricos.
+
+Obs: este arquivo NÃO depende do painel/API; é só cálculo do worker.
+"""
+
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
-import math
+from typing import List, Tuple
 
 from .indicators import ema, rsi, atr
-import statistics
+
 
 @dataclass
 class Signal:
     par: str
     side: str  # LONG/SHORT/NÃO ENTRAR
-    mode: str  # PRO
-    entrada: float
     atual: float
     alvo: float
     ganho_pct: float
-    prazo: str
     assert_pct: float
+    prazo: str
+    zona: str
     risco: str
     prioridade: str
-    zona: str
-    price_source: str  # MARK
 
-def _fmt_prazo(hours_min: float, hours_max: float) -> str:
-    # PRAZO como número (horas) para variar por moeda
-    h = (float(hours_min or 0.0) + float(hours_max or 0.0)) / 2.0
-    if h <= 0:
-        return "-"
-    if h < 1.0:
-        return f"{h*60.0:.0f}m"   # ex: 45m
-    return f"{h:.1f}h"           # ex: 5.3h
+
+def _to_ohlc_list(ohlc_like) -> List[List[float]]:
+    """Normaliza para lista de [o,h,l,c] (floats)."""
+    out: List[List[float]] = []
+    if not ohlc_like:
+        return out
+    for row in ohlc_like:
+        try:
+            o, h, l, c = row[0], row[1], row[2], row[3]
+            out.append([float(o), float(h), float(l), float(c)])
+        except Exception:
+            continue
+    return out
+
+
+def _closes(ohlc: List[List[float]]) -> List[float]:
+    return [x[3] for x in ohlc if len(x) >= 4]
+
+
+def _atr_last(ohlc: List[List[float]], period: int = 14) -> float:
+    """ATR último valor a partir de lista [o,h,l,c]."""
+    if not ohlc or len(ohlc) < period + 2:
+        return 0.0
+    highs = [x[1] for x in ohlc]
+    lows = [x[2] for x in ohlc]
+    closes = [x[3] for x in ohlc]
+    a = atr(highs, lows, closes, period=period)
+    return float(a[-1]) if a else 0.0
+
+
+def _fmt_prazo(hours: float) -> str:
+    if hours <= 0:
+        return ""
+    if hours < 1.0:
+        return f"{hours*60.0:.0f}m"
+    return f"{hours:.1f}h"
+
 
 def direction_from_indicators(closes: List[float]) -> Tuple[str, float]:
-    # returns (side, strength 0..1)
+    """Retorna (side, strength 0..1)"""
+    if not closes or len(closes) < 60:
+        return ("NÃO ENTRAR", 0.0)
     e20 = ema(closes, 20)
     e50 = ema(closes, 50)
     rs = rsi(closes, 14)
     if not e20 or not e50 or not rs:
         return ("NÃO ENTRAR", 0.0)
-    # align to last
+
     ema20 = e20[-1]
     ema50 = e50[-1]
     rsi14 = rs[-1]
-    # simple rules
+    last = closes[-1]
+
+    # regras simples e estáveis
     if ema20 > ema50 and rsi14 >= 55:
-        strength = min(1.0, (rsi14-55)/20 + (ema20-ema50)/max(1e-9, closes[-1]*0.01))
+        strength = min(1.0, (rsi14 - 55) / 20.0 + (ema20 - ema50) / max(1e-9, last * 0.01))
         return ("LONG", max(0.0, min(1.0, strength)))
     if ema20 < ema50 and rsi14 <= 45:
-        strength = min(1.0, (45-rsi14)/20 + (ema50-ema20)/max(1e-9, closes[-1]*0.01))
+        strength = min(1.0, (45 - rsi14) / 20.0 + (ema50 - ema20) / max(1e-9, last * 0.01))
         return ("SHORT", max(0.0, min(1.0, strength)))
     return ("NÃO ENTRAR", 0.0)
 
-def mfe_mae_assert(ohlc: List[List[float]], side: str, target_dist: float, atr_val: float, lookahead: int = 12) -> float:
-    # lightweight historical assert% using past candles
-    # ohlc: list of [o,h,l,c] oldest->newest
-    if side not in ("LONG","SHORT"):
+
+def compute_gain_pct(atual: float, alvo: float, side: str) -> float:
+    if not atual or atual <= 0 or not alvo or alvo <= 0:
         return 0.0
-    # need enough candles
+    if side == "LONG":
+        return ((alvo - atual) / atual) * 100.0
+    if side == "SHORT":
+        return ((atual - alvo) / atual) * 100.0
+    return 0.0
+
+
+def compute_target_price(atual: float, atr_val: float, side: str, gain_min_pct: float) -> float:
+    """Alvo simples e consistente:
+    - distância mínima: max(ATR, atual*gain_min_pct%)
+    - LONG: atual + dist; SHORT: atual - dist
+    """
+    if not atual or atual <= 0:
+        return 0.0
+    dist_min = max(float(atr_val or 0.0), float(atual) * (float(gain_min_pct) / 100.0))
+    if side == "LONG":
+        return float(atual) + dist_min
+    if side == "SHORT":
+        return max(1e-12, float(atual) - dist_min)
+    return float(atual)
+
+
+def mfe_mae_assert(ohlc: List[List[float]], side: str, target_dist: float, atr_val: float, lookahead: int = 12) -> float:
+    """Assertividade histórica leve (0..100) usando janela de lookahead.
+    Não precisa ser perfeito; precisa ser estável e numérico.
+    """
+    if side not in ("LONG", "SHORT"):
+        return 0.0
     if len(ohlc) < 120:
         return 50.0
-    successes=0
-    total=0
-    mae_limit = 1.0 * atr_val  # simple risk bound
-    # iterate over last ~100 entries skipping newest window
-    start = max(60, len(ohlc)-180)
-    end = len(ohlc)-lookahead-1
+
+    mae_limit = 1.0 * float(atr_val or 0.0)
+    successes = 0
+    total = 0
+
+    start = max(60, len(ohlc) - 180)
+    end = len(ohlc) - lookahead - 1
     for i in range(start, end):
         entry = ohlc[i][3]
-        if side=="LONG":
-            max_high = max(x[1] for x in ohlc[i+1:i+1+lookahead])
-            min_low  = min(x[2] for x in ohlc[i+1:i+1+lookahead])
+        window = ohlc[i + 1 : i + 1 + lookahead]
+        if not window:
+            continue
+
+        if side == "LONG":
+            max_high = max(x[1] for x in window)
+            min_low = min(x[2] for x in window)
             mfe = max_high - entry
             mae = entry - min_low
             if mae <= mae_limit and mfe >= target_dist:
                 successes += 1
             total += 1
         else:
-            min_low  = min(x[2] for x in ohlc[i+1:i+1+lookahead])
-            max_high = max(x[1] for x in ohlc[i+1:i+1+lookahead])
+            min_low = min(x[2] for x in window)
+            max_high = max(x[1] for x in window)
             mfe = entry - min_low
             mae = max_high - entry
             if mae <= mae_limit and mfe >= target_dist:
                 successes += 1
             total += 1
+
     if total <= 0:
         return 50.0
-    return max(0.0, min(100.0, (successes/total)*100.0))
+    return max(0.0, min(100.0, (successes / total) * 100.0))
 
 
-def _lvl_up(x: str, levels) -> str:
-    i = levels.index(x) if x in levels else len(levels)-1
-    return levels[max(0, i-1)]
+def classify_qualitatives(strength: float, atr_pct: float, gain_pct: float) -> Tuple[str, str, str]:
+    """Retorna (zona, risco, prioridade)"""
 
-def _lvl_down(x: str, levels) -> str:
-    i = levels.index(x) if x in levels else 0
-    return levels[min(len(levels)-1, i+1)]
-
-def classify_levels(atr_pct: float, gain_pct: float, side_final: str, side_24h: str) -> Tuple[str,str,str]:
-    """
-    Regras simples e seguras (versão para o seu projeto):
-    - ZONA: ALTA/MÉDIA/BAIXA (força)
-    - RISCO: BAIXO/MÉDIO/ALTO
-    - PRIORIDADE: ALTA/MÉDIA/BAIXA
-    Observação: 24h é só 'freio' (ajusta 1 nível no máximo).
-    """
-    # base RISCO por volatilidade (ATR%)
+    # RISCO por volatilidade (ATR%)
     if atr_pct <= 0.02:
         risco = "BAIXO"
     elif atr_pct <= 0.05:
@@ -112,134 +172,88 @@ def classify_levels(atr_pct: float, gain_pct: float, side_final: str, side_24h: 
     else:
         risco = "ALTO"
 
-    # base ZONA pela situação do 24h
-    if side_final == "NÃO ENTRAR":
-        zona = "BAIXA"
+    # ZONA por força
+    if strength >= 0.66:
+        zona = "ALTA"
+    elif strength >= 0.33:
+        zona = "MÉDIA"
     else:
-        if side_24h == side_final:
-            zona = "ALTA"
-        elif side_24h == "NÃO ENTRAR":
-            zona = "MÉDIA"
-        else:
-            zona = "BAIXA"
+        zona = "BAIXA"
 
-    # freio 24h (ajusta risco 1 nível)
-    risk_levels = ["BAIXO","MÉDIO","ALTO"]
-    if side_final != "NÃO ENTRAR" and side_24h != "NÃO ENTRAR":
-        if side_24h == side_final:
-            risco = _lvl_up(risco, risk_levels)   # melhora
-        else:
-            risco = _lvl_down(risco, risk_levels) # piora
-
-    # PRIORIDADE (direto)
-    # ALTA: ganho alto + zona boa + risco baixo
-    if side_final != "NÃO ENTRAR" and (gain_pct >= 6.0) and (zona == "ALTA") and (risco == "BAIXO"):
+    # PRIORIDADE: ganho + zona + risco
+    if gain_pct >= 6.0 and zona == "ALTA" and risco == "BAIXO":
         prioridade = "ALTA"
-    elif side_final != "NÃO ENTRAR" and (gain_pct >= 4.0) and (zona != "BAIXA") and (risco != "ALTO"):
+    elif gain_pct >= 4.0 and zona != "BAIXA" and risco != "ALTO":
         prioridade = "MÉDIA"
     else:
         prioridade = "BAIXA"
 
-    return risco, prioridade, zona
+    return zona, risco, prioridade
+
 
 def build_signal(
     par: str,
-    ohlc_1h: List[Tuple[float, float, float, float]],
-    ohlc_4h: List[Tuple[float, float, float, float]],
+    ohlc_1h,
+    ohlc_4h,
     mark_price: float,
     gain_min_pct: float,
     assert_min_pct: float,
 ) -> Signal:
-    """Compute signal and metrics.
-
-    REGRAS DO PROJETO (IMPORTANTE):
-    - Mesmo quando for "NÃO ENTRAR", as colunas: SIDE, ATUAL, ALVO, GANHO %, ASSERT %, DATA, HORA
-      devem estar sempre preenchidas (com valores calculados).
-    - Quando for "NÃO ENTRAR", as colunas: PRAZO, ZONA, RISCO, PRIORIDADE devem ficar "zeradas" (vazias).
-    """
-    # Defensive
+    """Calcula sinal + métricas conforme as regras do projeto."""
     atual = float(mark_price or 0.0)
+    if atual <= 0:
+        return Signal(par, "NÃO ENTRAR", 0.0, 0.0, 0.0, 0.0, "", "", "", "")
 
-    # Side candidates from trend
-    side_1h = compute_trade_side(ohlc_1h)
-    side_4h = compute_trade_side(ohlc_4h)
+    o1 = _to_ohlc_list(ohlc_1h)
+    o4 = _to_ohlc_list(ohlc_4h)
+    c1 = _closes(o1)
+    c4 = _closes(o4)
 
-    # If timeframes disagree or no signal, treat as NÃO ENTRAR (still fill numeric columns)
-    if (side_1h != side_4h) or (side_1h == "NÃO ENTRAR"):
-        return Signal(
-            par=par,
-            side="NÃO ENTRAR",
-            atual=atual,
-            alvo=atual,
-            ganho_pct=0.0,
-            assert_pct=0.0,
-            prazo="",
-            zona="",
-            risco="",
-            prioridade="",
-        )
+    side_1h, s1 = direction_from_indicators(c1)
+    side_4h, s4 = direction_from_indicators(c4)
 
-    side_candidate = side_4h  # agreed side
+    # Se não houver alinhamento, NÃO ENTRAR (numérico estável)
+    if side_1h == "NÃO ENTRAR" or side_4h == "NÃO ENTRAR" or side_1h != side_4h:
+        return Signal(par, "NÃO ENTRAR", atual, atual, 0.0, 0.0, "", "", "", "")
 
-    # ATR calculations (need at least one)
-    atr1 = compute_atr(ohlc_1h, ATR_PERIOD)
-    atr4 = compute_atr(ohlc_4h, ATR_PERIOD)
-    atr_val = atr4 if atr4 > 0 else atr1
+    side_candidate = side_4h
+    strength = float((s1 + s4) / 2.0)
+
+    # ATR (usa 4h como principal)
+    atr_val = _atr_last(o4, 14)
     if atr_val <= 0:
-        return Signal(
-            par=par,
-            side="NÃO ENTRAR",
-            atual=atual,
-            alvo=atual,
-            ganho_pct=0.0,
-            assert_pct=0.0,
-            prazo="",
-            zona="",
-            risco="",
-            prioridade="",
-        )
+        atr_val = _atr_last(o1, 14)
 
-    # Target + gain (always computed when we have a candidate side + ATR)
-    target = compute_target_price(atual, atr_val, side_candidate, mode="atr4h")
-    gain_pct = compute_gain_pct(atual, target, side_candidate)
+    # Alvo e ganho sempre calculados quando existe candidato
+    alvo = compute_target_price(atual, atr_val, side_candidate, gain_min_pct)
+    ganho_pct = compute_gain_pct(atual, alvo, side_candidate)
 
-    # Assertiveness (always computed when we have a side candidate)
-    assert_pct = compute_assertiveness(par, side_candidate)
+    # Assertividade leve
+    target_dist = abs(alvo - atual)
+    assert_pct = float(mfe_mae_assert(o4, side_candidate, target_dist, atr_val, lookahead=12))
 
-    # Only enter if passes thresholds
-    passes = (gain_pct >= float(gain_min_pct)) and (assert_pct >= float(assert_min_pct))
-
+    # aplica filtros
+    passes = (ganho_pct >= float(gain_min_pct)) and (assert_pct >= float(assert_min_pct))
     if not passes:
-        # NÃO ENTRAR but keep calculated alvo/ganho/assert; blank the qualitative cols
-        return Signal(
-            par=par,
-            side="NÃO ENTRAR",
-            atual=atual,
-            alvo=float(target),
-            ganho_pct=float(gain_pct),
-            assert_pct=float(assert_pct),
-            prazo="",
-            zona="",
-            risco="",
-            prioridade="",
-        )
+        return Signal(par, "NÃO ENTRAR", atual, float(alvo), float(ganho_pct), float(assert_pct), "", "", "", "")
 
-    # Enterable: compute qualitative fields
-    prazo = compute_time_to_target(gain_pct)
-    zona = classify_levels(gain_pct, "ZONA")
-    risco = classify_levels(gain_pct, "RISCO")
-    prioridade = classify_levels(assert_pct, "PRIORIDADE")
+    atr_pct = float(atr_val / atual) if atual > 0 else 0.0
+    zona, risco, prioridade = classify_qualitatives(strength, atr_pct, ganho_pct)
+
+    # prazo estimado simples (ganho maior -> prazo menor). Escala estável.
+    # 2% -> ~6h, 4% -> ~4h, 6% -> ~3h (aprox)
+    hours = max(0.5, 12.0 / max(1.0, float(ganho_pct)))
+    prazo = _fmt_prazo(hours)
 
     return Signal(
         par=par,
         side=side_candidate,
         atual=atual,
-        alvo=float(target),
-        ganho_pct=float(gain_pct),
+        alvo=float(alvo),
+        ganho_pct=float(ganho_pct),
         assert_pct=float(assert_pct),
         prazo=prazo,
         zona=zona,
         risco=risco,
         prioridade=prioridade,
     )
-

@@ -175,9 +175,55 @@ def main():
     payload = build_payload()
     write_json(os.path.join(DATA_DIR, "pro.json"), payload)
 
-    # TOP10: somente LONG/SHORT, ordenado por GANHO% desc, ASSERT% desc
+    # TOP10 (conforme PROMPT BLOCO 1):
+    # 1) filtra somente LONG/SHORT válidos (passaram 55/2)
+    # 2) ordena por: maior PRIORIDADE (ALTA>MÉDIA>BAIXA) -> maior ASSERT% -> maior GANHO%
+    #    -> menor RISCO (BAIXO melhor) -> menor PRAZO (menor melhor)
+    def _pts_prioridade(v: str) -> int:
+        v = (v or "").upper()
+        if v == "ALTA":
+            return 3
+        if v in ("MÉDIA", "MEDIA"):
+            return 2
+        if v == "BAIXA":
+            return 1
+        return 0
+
+    def _pts_risco(v: str) -> int:
+        v = (v or "").upper()
+        if v == "BAIXO":
+            return 3
+        if v in ("MÉDIO", "MEDIO"):
+            return 2
+        if v == "ALTO":
+            return 1
+        return 0
+
+    def _prazo_min(p: str) -> float:
+        # aceita "4.2h" ou "50m"; se vazio, joga p/ fim
+        try:
+            s = (p or "").strip().lower()
+            if not s:
+                return 1e9
+            if s.endswith('h'):
+                return float(s[:-1].strip()) * 60.0
+            if s.endswith('m'):
+                return float(s[:-1].strip())
+        except Exception:
+            pass
+        return 1e9
+
     ls = [x for x in payload["items"] if x.get("side") in ("LONG", "SHORT")]
-    ls.sort(key=lambda x: (float(x.get("ganho_pct") or 0.0), float(x.get("assert_pct") or 0.0)), reverse=True)
+    ls.sort(
+        key=lambda x: (
+            _pts_prioridade(x.get("prioridade")),
+            float(x.get("assert_pct") or 0.0),
+            float(x.get("ganho_pct") or 0.0),
+            _pts_risco(x.get("risco")),
+            -_prazo_min(x.get("prazo")),
+        ),
+        reverse=True,
+    )
     top10 = dict(payload)
     top10["items"] = ls[:10]
     write_json(os.path.join(DATA_DIR, "top10.json"), top10)
