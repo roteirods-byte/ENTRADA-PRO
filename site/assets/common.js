@@ -310,6 +310,21 @@ function setBadges(info) {
   el.textContent = `Atualizado (BRT): ${updatedBrt} • Itens: ${count} • Fonte: ${source}`;
 }
 
+
+/* PZRP_BLANK_V1 */
+function __pZrpBlank(side, key){
+  const t = String(side||'').toUpperCase()
+    .replaceAll('Á','A').replaceAll('À','A').replaceAll('Ã','A')
+    .replaceAll('É','E').replaceAll('Ê','E')
+    .replaceAll('Í','I')
+    .replaceAll('Ó','O').replaceAll('Ô','O')
+    .replaceAll('Ç','C');
+  const no = (t.includes('NAO ENTRAR') || t.includes('NÃO ENTRAR'));
+  if (!no) return false;
+  const k = String(key||'').toLowerCase();
+  return (k==='prazo' || k==='zona' || k==='risco' || k==='prioridade');
+}
+
 function renderTable(kind, items) {
   const cols = (kind === 'top10') ? COLS_TOP10 : COLS_FULL;
   const tbody = q('#tbl tbody');
@@ -326,11 +341,33 @@ function renderTable(kind, items) {
     const isNoEnter = sideRaw.includes('NÃO ENTRAR');
 
     return '<tr>' + cols.map(([_, key]) => {
+<<<<<<< Updated upstream
       // REGRA: se NÃO ENTRAR, só mostra PAR,SIDE,ATUAL,GANHO%,ASSERT%,DATA,HORA
       if (isNoEnter && !KEEP_NOENTER.has(key)) return `<td class=""></td>`;
 
+=======
+      /* NAO_ENTRAR_BLANK */
+      const _sidev = (it && typeof it === 'object') ? String(it['side'] || '') : '';
+      const _isNo = _sidev.toUpperCase().includes('NÃO') || _sidev.toUpperCase().includes('NAO');
+      /* PRAZO_RAW */
+        if (key === 'prazo') {
+          const _pv = (it && typeof it === 'object') ? (it['prazo'] ?? '') : '';
+        }
+
+       if (_isNo && ['prazo','zona','risco','prioridade'].includes(key)) {
+  return `<td class=""></td>`;
+}
+
+      const sideV = (it && typeof it === 'object') ? (it['side'] ?? it.side) : undefined;
+      const sideS = String(sideV ?? '').toUpperCase().replace('NAO','NÃO');
+>>>>>>> Stashed changes
       const raw = (it && typeof it === 'object') ? it[key] : undefined;
       let text = '-';
+// ✅ regra: quando NÃO ENTRAR e o valor vier vazio, mostrar célula vazia (sem "-")
+if (_isNo && (raw === null || raw === undefined || raw === '')) {
+  text = '';
+}
+
       let cls = '';
 
       if (key === 'atual' || key === 'alvo') text = fmtPrice(raw);
@@ -342,7 +379,9 @@ function renderTable(kind, items) {
       else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = priorityClass(raw); }
       else text = fmtText(raw);
 
-      return `<td class="${cls}">${text}</td>`;
+        return '<td class="' + cls + '">' + text + '</td>';
+
+
     }).join('') + '</tr>';
   }).join('');
 

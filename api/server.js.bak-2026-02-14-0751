@@ -1,0 +1,34 @@
+'use strict';
+
+const express = require('express');
+const fs = require('fs/promises');
+const path = require('path');
+
+const app = express();
+app.disable('x-powered-by');
+
+const PORT = Number(process.env.PORT || 8080);
+const DATA_DIR = (process.env.DATA_DIR || '/opt/ENTRADA-PRO/data').trim();
+
+async function readLocal(file) {
+  const p = path.join(DATA_DIR, file);
+  const txt = await fs.readFile(p, 'utf8');
+  return JSON.parse(txt);
+}
+
+app.get(['/api/health','/health'], (req,res)=>res.json({ok:true}));
+
+app.get('/api/pro', async (req,res)=>{
+  try { res.json(await readLocal('pro.json')); }
+  catch(e){ res.status(500).json({ok:false,error:'local_pro_failed'}); }
+});
+
+app.get('/api/top10', async (req,res)=>{
+  try { res.json(await readLocal('top10.json')); }
+  catch(e){ res.status(500).json({ok:false,error:'local_top10_failed'}); }
+});
+
+app.listen(PORT, ()=> {
+  console.log(`[entrada-pro-api] listening on ${PORT}`);
+  console.log(`[entrada-pro-api] DATA_DIR=${DATA_DIR}`);
+});

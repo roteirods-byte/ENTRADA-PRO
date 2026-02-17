@@ -1,0 +1,111 @@
+/* ENTRADA-PRO API (Node)
+   - Serve /api/pro e /api/top10
+   - Se PRO_JSON_URL/TOP10_JSON_URL não existirem ou falharem, lê do DATA_DIR: pro.json/top10.json
+*/
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+
+const fs = require('fs');
+const path = require('path');
+const express = require('express');
+
+const app = express();
+app.disable('x-powered-by');
+
+const PORT = Number(process.env.PORT || 8080);
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+
+const PRO_JSON_URL  = process.env.PRO_JSON_URL  || '';
+const TOP10_JSON_URL = process.env.TOP10_JSON_URL || '';
+
+const CACHE = {
+  pro:  { ts: 0, data: null },
+  top10:{ ts: 0, data: null },
+};
+
+function noStore(res){
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+}
+
+async function fetchJsonWithTimeout(url, ms){
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  try{
+    const r = await fetch(url, { signal: controller.signal, headers: { 'accept': 'application/json' } });
+    if(!r.ok) throw new Error(`HTTP_${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function readLocalJson(fileName){
+  try{
+    const fp = path.join(DATA_DIR, fileName);
+    const s = fs.readFileSync(fp, 'utf-8');
+    const obj = JSON.parse(s);
+    if(obj && typeof obj === 'object'){
+      if(!obj.source) obj.source = 'local';
+      return obj;
+    }
+  }catch(e){}
+  return null;
+}
+
+async function getCached(name, url, maxAgeMs, localFile){
+  const now = Date.now();
+  const ent = CACHE[name];
+
+  if(ent.data && (now - ent.ts) < maxAgeMs) return ent.data;
+
+  let data = null;
+
+  // tenta URL se existir
+  if(url){
+    try{
+      data = await fetchJsonWithTimeout(url, 4000);
+      if(data && typeof data === 'object' && !data.source) data.source = 'remote';
+    }catch(e){
+      console.error(`[api] ${name} remote fail:`, e?.message || e);
+    }
+  }
+
+  // fallback local
+  if(!data){
+    const local = readLocalJson(localFile);
+    if(local) data = local;
+  }
+
+  // se ainda não tem data, retorna erro claro
+  if(!data){
+    return { ok:false, error: url ? 'fetch_failed_and_no_local' : 'url_not_set_and_no_local', name };
+  }
+
+  ent.ts = now;
+  ent.data = data;
+  return data;
+}
+
+app.get('/health', (req,res)=>{ noStore(res); res.json({ ok:true }); });
+app.get('/api/version', (req,res)=>{ noStore(res); res.json({ ok:true, version: require('fs').existsSync(path.join(__dirname,'..','VERSION')) ? fs.readFileSync(path.join(__dirname,'..','VERSION'),'utf-8').trim() : 'unknown' }); });
+
+app.get('/api/pro', async (req,res)=>{
+  noStore(res);
+  const data = await getCached('pro', PRO_JSON_URL, 6000, 'pro.json');
+  res.json(data);
+});
+
+app.get('/api/top10', async (req,res)=>{
+  noStore(res);
+  const data = await getCached('top10', TOP10_JSON_URL, 6000, 'top10.json');
+  res.json(data);
+});
+
+app.listen(PORT, '0.0.0.0', ()=>{
+  console.log(`[entrada-pro-api] listening on ${PORT}`);
+  console.log(`[entrada-pro-api] DATA_DIR=${DATA_DIR}`);
+  console.log(`[entrada-pro-api] PRO_JSON_URL=${PRO_JSON_URL ? 'set' : 'missing'}`);
+  console.log(`[entrada-pro-api] TOP10_JSON_URL=${TOP10_JSON_URL ? 'set' : 'missing'}`);
+});

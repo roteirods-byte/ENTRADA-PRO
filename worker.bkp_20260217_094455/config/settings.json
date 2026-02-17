@@ -1,0 +1,7 @@
+{
+  "gain_min_pct": 3.0,
+  "assert_min_pct": 0.0,
+  "primary_exchange": "binance",
+  "secondary_exchange": "bybit",
+  "update_interval_seconds": 300
+}
