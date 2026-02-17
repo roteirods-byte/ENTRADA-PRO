@@ -2,44 +2,35 @@
 'use strict';
 
 const express = require('express');
-// --- NO CACHE (Spaces -> API) ---
-function noStore(res) {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-  res.setHeader("Surrogate-Control", "no-store");
-}
-
-async function fetchJsonNoCache(url) {
-  // cache-bust para derrubar cache de CDN/proxy
-  const u = new URL(url);
-  u.searchParams.set("t", String(Date.now()));
-
-  const r = await fetch(u.toString(), {
-    method: "GET",
-    // Node/undici respeita isso; e os headers ajudam em proxies
-    cache: "no-store",
-    headers: {
-      "Cache-Control": "no-cache",
-      "Pragma": "no-cache",
-      "Accept": "application/json",
-    },
-  });
-
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`fetch ${u} -> ${r.status} ${txt.slice(0, 200)}`);
-  }
-  return r.json();
-}
+const fs = require('fs/promises');
+const path = require('path');
 
 const app = express();
-app.get("/health", (req, res) => res.status(200).json({ ok: true }));
-app.get("/api/health", (req, res) => res.status(200).json({ ok: true }));
-app.get("/", (req, res) => res.status(200).send("ok"));
 app.disable('x-powered-by');
 
-// CORS simples (para o painel poder ler a API mesmo se estiver em outro endereço)
+// ====== CONFIG ======
+const SERVICE = 'entrada-pro-api';
+const PORT = Number(process.env.PORT || 8080);
+
+// Por padrão, usa ../data (repo/data). Em produção, configure DATA_DIR.
+const DATA_DIR = (process.env.DATA_DIR && process.env.DATA_DIR.trim())
+  ? process.env.DATA_DIR.trim()
+  : path.join(__dirname, '..', 'data');
+
+// ====== HELPERS ======
+function nowUtc() {
+  return new Date().toISOString();
+}
+
+// Sem cache (browser/proxy/CDN)
+function noStore(res) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+}
+
+// CORS simples (painel pode estar em outro host)
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -48,80 +39,33 @@ app.use((req, res, next) => {
   next();
 });
 
-// ====== CONFIG ======
-const SERVICE = 'entrada-pro-api';
-const PORT = Number(process.env.PORT || 8080);
-const DATA_DIR = process.env.DATA_DIR || '/workspace/data';
-
-const PRO_JSON_URL = (process.env.PRO_JSON_URL || '').trim();
-const TOP10_JSON_URL = (process.env.TOP10_JSON_URL || '').trim();
-
-// cache simples p/ evitar 504 e excesso de chamadas
-const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 60_000);
-
-const cache = {
-  pro: { at: 0, data: null, err: null },
-  top10: { at: 0, data: null, err: null },
-};
-
-function nowUtc() {
-  return new Date().toISOString();
+async function readJsonFile(filename) {
+  const full = path.join(DATA_DIR, filename);
+  const raw = await fs.readFile(full, 'utf8');
+  return JSON.parse(raw);
 }
 
-async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-
+async function sendJsonFromFile(res, filename) {
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { accept: 'application/json' },
-    });
-
-    if (!res.ok) {
-      const err = new Error(`http_${res.status}`);
-      err.code = `http_${res.status}`;
-      throw err;
-    }
-
-    return await res.json();
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function getCached(key, url) {
-  const slot = cache[key];
-  const age = Date.now() - slot.at;
-
-  if (slot.data && age < CACHE_TTL_MS) {
-    return { ok: true, source: 'cache', updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
-  }
-
-  if (!url) {
-    return { ok: false, error: 'url_not_set' };
-  }
-
-  try {
-    const json = await fetchJsonWithTimeout(url, 8000);
-    slot.at = Date.now();
-    slot.data = json;
-    slot.err = null;
-
-    return { ok: true, source: 'spaces', updated_at: nowUtc(), items: json.items ?? json, raw: json };
+    const json = await readJsonFile(filename);
+    noStore(res);
+    return res.status(200).json(json); // IMPORTANTE: retorna o JSON "puro" do data/
   } catch (e) {
-    slot.at = Date.now();
-    slot.err = e?.code || e?.message || 'fetch_error';
-
-    if (slot.data) {
-      return { ok: true, source: 'stale_cache', warning: slot.err, updated_at: nowUtc(), items: slot.data.items ?? slot.data, raw: slot.data };
-    }
-
-    return { ok: false, error: slot.err };
+    const msg = (e && e.message) ? e.message : String(e);
+    return res.status(500).json({
+      ok: false,
+      service: SERVICE,
+      now_utc: nowUtc(),
+      data_dir: DATA_DIR,
+      file: filename,
+      error: msg,
+    });
   }
 }
 
 // ====== ROUTES ======
+app.get(['/health', '/api/health'], (req, res) => res.status(200).json({ ok: true }));
+
 app.get('/', (req, res) => {
   res.status(200).send(
     `OK: ${SERVICE}\n` +
@@ -139,35 +83,17 @@ function versionPayload() {
     version: process.env.APP_VERSION || 'unknown',
     now_utc: nowUtc(),
     data_dir: DATA_DIR,
-    pro_json_url: PRO_JSON_URL ? 'set' : 'missing',
-    top10_json_url: TOP10_JSON_URL ? 'set' : 'missing',
   };
 }
 
-// version (com e sem /api)
-app.get(['/api/version', '/version'], (req, res) => res.json(versionPayload()));
+app.get(['/api/version', '/version'], (req, res) => res.status(200).json(versionPayload()));
 
-// health (com e sem /api)
-app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true }));
-
-// pro (com e sem /api)
-app.get(['/api/pro', '/pro'], async (req, res) => {
-  const out = await getCached('pro', PRO_JSON_URL);
-  if (!out.ok) return res.status(500).json(out);
-  return res.json(out);
-});
-
-// top10 (com e sem /api)
-app.get(['/api/top10', '/top10'], async (req, res) => {
-  const out = await getCached('top10', TOP10_JSON_URL);
-  if (!out.ok) return res.status(500).json(out);
-  return res.json(out);
-});
+// BLOCO 2 (blindado): NÃO CALCULA NADA. SÓ LÊ ARQUIVO.
+app.get(['/api/pro', '/pro'], async (req, res) => sendJsonFromFile(res, 'pro.json'));
+app.get(['/api/top10', '/top10'], async (req, res) => sendJsonFromFile(res, 'top10.json'));
 
 // ====== START ======
 app.listen(PORT, () => {
   console.log(`[${SERVICE}] listening on ${PORT} | now=${nowUtc()}`);
   console.log(`[${SERVICE}] DATA_DIR=${DATA_DIR}`);
-  console.log(`[${SERVICE}] PRO_JSON_URL=${PRO_JSON_URL ? 'set' : 'missing'}`);
-  console.log(`[${SERVICE}] TOP10_JSON_URL=${TOP10_JSON_URL ? 'set' : 'missing'}`);
 });
