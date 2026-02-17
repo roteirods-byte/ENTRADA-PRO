@@ -1,5 +1,8 @@
 from __future__ import annotations
-import os, time
+
+import os
+import time
+import re
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -17,6 +20,8 @@ OUT_FILE = Path(os.getenv("PRO_JSON", str(Path(DATA_DIR) / "pro.json")))
 TOP10_FILE = Path(os.getenv("TOP10_JSON", str(Path(DATA_DIR) / "top10.json")))
 INTERVAL_S = int(os.getenv("WORKER_INTERVAL_S", "300"))
 
+DEFAULT_TTL_HOURS = int(os.getenv("SIGNAL_TTL_HOURS", "6"))
+
 def log(msg: str) -> None:
     print(f"[WORKER_PRO] {msg}", flush=True)
 
@@ -24,8 +29,9 @@ def brt_data_hora():
     if ZoneInfo:
         dt = datetime.now(ZoneInfo("America/Sao_Paulo"))
     else:
+        # fallback (UTC) – melhor do que quebrar
         dt = datetime.utcnow()
-    return dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M")
+    return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
 
 def _sym(par: str) -> str:
     return f"{par.upper()}USDT"
@@ -69,6 +75,53 @@ def _pts_p(p):  # PRIORIDADE: ALTA=3, MEDIA=2, BAIXA=1
     if p=="MEDIA": return 2
     return 1
 
+def _parse_ttl_hours(prazo: str) -> int:
+    # exemplos: "4-6h", "6h", "1-3H"
+    s = str(prazo or "").strip().lower()
+    if not s:
+        return DEFAULT_TTL_HOURS
+    m = re.findall(r"(\d+)", s)
+    if not m:
+        return DEFAULT_TTL_HOURS
+    # pega o MAIOR número encontrado (mais conservador)
+    try:
+        return max(int(x) for x in m)
+    except Exception:
+        return DEFAULT_TTL_HOURS
+
+def _mk_item_base(par: str, data: str, hora: str, src: str):
+    return {
+        "par": par,
+        "data": data,
+        "hora": hora,
+        "price_source": src,
+        # campos internos (não exibidos no painel)
+        "nao_entrar_motivo": None,
+        "ttl_expira_em": None,
+    }
+
+def _apply_filters_and_shape(item: dict) -> dict:
+    # Regras oficiais:
+    # - Só entra se ganho>=GAIN_MIN_PCT e assert>=ASSERT_MIN_PCT.
+    # - Se NÃO ENTRAR: deixar vazio prazo/zona/risco/prioridade, mas manter ganho/assert quando existirem.
+    side = item.get("side")
+    if side in ("LONG","SHORT"):
+        g = float(item.get("ganho_pct") or 0.0)
+        a = float(item.get("assert_pct") or 0.0)
+        if g < float(GAIN_MIN_PCT) or a < float(ASSERT_MIN_PCT):
+            motivos = []
+            if g < float(GAIN_MIN_PCT): motivos.append("ganho<min")
+            if a < float(ASSERT_MIN_PCT): motivos.append("assert<min")
+            item["side"] = "NÃO ENTRAR"
+            item["alvo"] = None
+            item["prazo"] = ""
+            item["zona"] = ""
+            item["risco"] = ""
+            item["prioridade"] = ""
+            item["nao_entrar_motivo"] = "+".join(motivos) if motivos else "filtro"
+            item["ttl_expira_em"] = None
+    return item
+
 def build_payload():
     updated_at = now_utc_iso()
     data, hora = brt_data_hora()
@@ -81,117 +134,135 @@ def build_payload():
         symbol = _sym(par)
         mark, src = _safe_mark(symbol)
 
+        base = _mk_item_base(par, data, hora, src)
+
         if mark is None:
             miss_count += 1
-            items.append({
-                "par": par, "side": "NÃO ENTRAR",
-                "atual": None, "alvo": None, "ganho_pct": None, "assert_pct": None,
-                # ✅ regra oficial: vazios
-                "prazo": "", "zona": "", "risco": "", "prioridade": "",
-                "data": data, "hora": hora, "price_source": src,
-                "nao_entrar_motivo": "sem_mark", "ttl_expira_em": None
-            })
+            it = {
+                **base,
+                "side": "NÃO ENTRAR",
+                "atual": None,
+                "alvo": None,
+                "ganho_pct": None,
+                "assert_pct": None,
+                "prazo": "",
+                "zona": "",
+                "risco": "",
+                "prioridade": "",
+            }
+            it["nao_entrar_motivo"] = "sem_mark"
+            items.append(it)
             continue
 
         o1 = _safe_klines(symbol, "1h")
         o4 = _safe_klines(symbol, "4h")
         if (not o1) or (not o4):
             miss_count += 1
-            items.append({
-                "par": par, "side": "NÃO ENTRAR",
-                "atual": float(mark), "alvo": None, "ganho_pct": None, "assert_pct": None,
-                "prazo": "", "zona": "", "risco": "", "prioridade": "",
-                "data": data, "hora": hora, "price_source": src,
-                "nao_entrar_motivo": "sem_klines", "ttl_expira_em": None
-            })
+            it = {
+                **base,
+                "side": "NÃO ENTRAR",
+                "atual": float(mark),
+                "alvo": None,
+                "ganho_pct": None,
+                "assert_pct": None,
+                "prazo": "",
+                "zona": "",
+                "risco": "",
+                "prioridade": "",
+            }
+            it["nao_entrar_motivo"] = "sem_klines"
+            items.append(it)
             continue
 
         sig = build_signal(
-            par=par, ohlc_1h=o1, ohlc_4h=o4, mark_price=float(mark),
-            gain_min_pct=float(GAIN_MIN_PCT), assert_min_pct=float(ASSERT_MIN_PCT)
+            par=par,
+            ohlc_1h=o1,
+            ohlc_4h=o4,
+            mark_price=float(mark),
+            gain_min_pct=float(GAIN_MIN_PCT),
+            assert_min_pct=float(ASSERT_MIN_PCT),
         )
 
-        # segurança: revalida filtros oficiais
-        motivo = getattr(sig, "nao_entrar_motivo", "") or ""
-        if sig.side in ("LONG", "SHORT"):
-            g = float(sig.ganho_pct or 0.0)
-            a = float(sig.assert_pct or 0.0)
-            if g < float(GAIN_MIN_PCT):
-                sig.side = "NÃO ENTRAR"
-                motivo = motivo or "ganho<min"
-            elif a < float(ASSERT_MIN_PCT):
-                sig.side = "NÃO ENTRAR"
-                motivo = motivo or "assert<min"
+        it = {
+            **base,
+            "par": sig.par,
+            "side": sig.side,
+            "atual": None if sig.atual is None else float(sig.atual),
+            "alvo": None if sig.alvo is None else float(sig.alvo),
+            "ganho_pct": None if sig.ganho_pct is None else float(sig.ganho_pct),
+            "assert_pct": None if sig.assert_pct is None else float(sig.assert_pct),
+            "prazo": sig.prazo or "",
+            "zona": sig.zona or "",
+            "risco": sig.risco or "",
+            "prioridade": sig.prioridade or "",
+            "price_source": src,
+        }
 
-        # ttl interno (só quando entra)
-        ttl_expira_em = None
-        if sig.side in ("LONG", "SHORT"):
-            ttl_h = int(getattr(sig, "ttl_hours", 0) or 0)
-            if ttl_h > 0:
-                ttl_expira_em = (datetime.utcnow() + timedelta(hours=ttl_h)).replace(microsecond=0).isoformat() + "Z"
+        # TTL só para LONG/SHORT
+        if it["side"] in ("LONG","SHORT"):
+            ttl_h = _parse_ttl_hours(it.get("prazo"))
+            exp = datetime.utcnow() + timedelta(hours=ttl_h)
+            it["ttl_expira_em"] = exp.replace(microsecond=0).isoformat() + "Z"
 
-        # regra oficial: quando NÃO ENTRAR, manter ganho/assert (se existirem) e deixar PRAZO/ZONA/RISCO/PRIORIDADE vazios
-        ganho_out = float(sig.ganho_pct) if (sig.ganho_pct is not None and float(sig.ganho_pct) > 0) else None
-        assert_out = float(sig.assert_pct) if (sig.assert_pct is not None and float(sig.assert_pct) > 0) else None
+        it = _apply_filters_and_shape(it)
 
-        if sig.side == "NÃO ENTRAR":
-            items.append({
-                "par": sig.par, "side": "NÃO ENTRAR",
-                "atual": float(sig.atual),
-                "alvo": None,
-                "ganho_pct": ganho_out,
-                "assert_pct": assert_out,
-                "prazo": "", "zona": "", "risco": "", "prioridade": "",
-                "data": data, "hora": hora, "price_source": src,
-                "nao_entrar_motivo": (motivo or "filtro"),
-                "ttl_expira_em": None
-            })
-        else:
-            items.append({
-                "par": sig.par, "side": sig.side,
-                "atual": float(sig.atual),
-                "alvo": float(sig.alvo),
-                "ganho_pct": float(sig.ganho_pct),
-                "assert_pct": float(sig.assert_pct),
-                "prazo": sig.prazo, "zona": sig.zona, "risco": sig.risco, "prioridade": sig.prioridade,
-                "data": data, "hora": hora, "price_source": src,
-                "nao_entrar_motivo": "",
-                "ttl_expira_em": ttl_expira_em
-            })
+        if it.get("side") in ("LONG","SHORT"):
             ok_count += 1
 
+        items.append(it)
+
+    # ordena para FULL
     items.sort(key=lambda x: (x.get("par") or ""))
 
-    # TOP10 (pontos -> assert -> ganho -> par) + filtros oficiais
-    cand = []
-    for it in items:
-        if it.get("side") not in ("LONG","SHORT"):
-            continue
-        g = float(it.get("ganho_pct") or 0.0)
-        a = float(it.get("assert_pct") or 0.0)
-        if g < float(GAIN_MIN_PCT): continue
-        if a < float(ASSERT_MIN_PCT): continue
-        pts = _pts_z(it.get("zona")) + _pts_r(it.get("risco")) + _pts_p(it.get("prioridade"))
-        it2 = dict(it)
-        it2["rank_pts"] = int(pts)
-        cand.append(it2)
+    payload = {
+        "ok": True,
+        "source": "local",
+        "updated_at": updated_at,
+        "now_brt": f"{data} {hora}",
+        "items": items,
+        "_meta": {
+            "coins": len(COINS),
+            "ok_count": ok_count,
+            "miss_count": miss_count,
+            "gain_min_pct": float(GAIN_MIN_PCT),
+            "assert_min_pct": float(ASSERT_MIN_PCT),
+            "ttl_default_h": DEFAULT_TTL_HOURS,
+        },
+    }
+    return payload
 
-    cand.sort(key=lambda x: (-int(x.get("rank_pts") or 0), -float(x.get("assert_pct") or 0.0), -float(x.get("ganho_pct") or 0.0), str(x.get("par") or "")))
+def build_top10(full_payload: dict):
+    items = full_payload.get("items") or []
+    tradables = [x for x in items if x.get("side") in ("LONG","SHORT")]
 
-    payload = {"ok": True, "source": "local", "updated_at": updated_at, "items": items}
-    top10 = {"ok": True, "source": "local", "updated_at": updated_at, "items": cand[:10]}
+    def score(x):
+        pts = _pts_z(x.get("zona")) + _pts_r(x.get("risco")) + _pts_p(x.get("prioridade"))
+        a = float(x.get("assert_pct") or 0.0)
+        g = float(x.get("ganho_pct") or 0.0)
+        return (pts, a, g)
 
-    log(f"OK | coins={len(COINS)} ok={ok_count} missing={miss_count} gain_min={GAIN_MIN_PCT} assert_min={ASSERT_MIN_PCT}")
-    return payload, top10
+    tradables.sort(key=score, reverse=True)
+    top = tradables[:10]
+
+    return {
+        "ok": True,
+        "source": "local",
+        "updated_at": full_payload.get("updated_at"),
+        "now_brt": full_payload.get("now_brt"),
+        "items": top,
+    }
 
 def main_loop():
+    log(f"start: OUT_FILE={OUT_FILE} TOP10_FILE={TOP10_FILE} interval={INTERVAL_S}s gain_min={GAIN_MIN_PCT} assert_min={ASSERT_MIN_PCT}")
     while True:
         try:
-            payload, top10 = build_payload()
-            atomic_write_json(OUT_FILE, payload)
+            full = build_payload()
+            top10 = build_top10(full)
+            atomic_write_json(OUT_FILE, full)
             atomic_write_json(TOP10_FILE, top10)
+            log(f"wrote pro={OUT_FILE} top10={TOP10_FILE} ok_count={full.get('_meta',{}).get('ok_count')} miss_count={full.get('_meta',{}).get('miss_count')}")
         except Exception as e:
-            log(f"ERROR: {type(e).__name__}: {e}")
+            log(f"ERROR: {e}")
         time.sleep(INTERVAL_S)
 
 if __name__ == "__main__":
