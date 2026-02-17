@@ -142,98 +142,65 @@ def classify_levels(atr_pct: float, gain_pct: float, side_final: str, side_24h: 
 
     return risco, prioridade, zona
 
-def build_signal(par: str, ohlc_1h: List[List[float]], ohlc_4h: List[List[float]], mark_price: float, gain_min_pct: float, assert_min_pct: float) -> Signal:
+def build_signal(
+    par: str,
+    ohlc_1h: List[Tuple[int, float, float, float, float]],
+    atual: float,
+    atr1: float,
+    atr4: float,
+    atr24: float,
+    gain_min: float = GAIN_MIN_PCT,
+    assert_min: float = ASSERT_MIN_PCT,
+) -> Signal:
     """
-    Regras do projeto (versão prática):
-    1) SIDE: 1H e 4H precisam concordar (senão: NÃO ENTRAR).
-    2) ALVO (ATR do modo escolhido):
-       - LONG: ATUAL + 1.5*ATR
-       - SHORT: ATUAL - 1.5*ATR
-    3) GANHO% = |ALVO-ATUAL|/ATUAL * 100.  Se < gain_min_pct => NÃO ENTRAR.
-    4) ASSERT%: se < assert_min_pct => NÃO ENTRAR.
-    4) 24h é só freio: aqui usamos a direção das últimas ~48h do 1H para ajustar ZONA/RISCO.
+    Regras (projeto):
+    - Sempre preencher (mesmo em NÃO ENTRAR): SIDE, ATUAL, ALVO, GANHO %, ASSERT %, DATA, HORA (DATA/HORA vem do worker).
+    - Quando NÃO ENTRAR: PRAZO/ZONA/RISCO/PRIORIDADE ficam vazios/zerados.
+    - LONG/SHORT só quando passa filtros (gain_min e assert_min) e há concordância 1H/4H.
     """
-    entrada = float(mark_price)
-    atual = float(mark_price)
+    # 1) Seleção de ATR (prazo base) e direção bruta
+    atr_val = float(atr4 or 0.0) if float(atr4 or 0.0) > 0 else float(atr1 or 0.0)
+    prazo_base = "4h" if float(atr4 or 0.0) > 0 else "1h"
 
-    def _atr_val(ohlc):
-        closes=[x[3] for x in ohlc]
-        highs=[x[1] for x in ohlc]
-        lows=[x[2] for x in ohlc]
-        s=atr(highs,lows,closes,14)
-        return (s[-1] if s else 0.0), closes
+    # Direções por janela
+    side1 = side_from_ohlc(ohlc_1h, 1)
+    side4 = side_from_ohlc(ohlc_1h, 4)
+    side24 = side_from_ohlc(ohlc_1h, 24)
 
-    atr1, closes1 = _atr_val(ohlc_1h)
-    atr4, closes4 = _atr_val(ohlc_4h)
+    def pick_candidate() -> str:
+        for s in (side1, side4, side24):
+            if s in ("LONG", "SHORT"):
+                return s
+        return "LONG"
 
-    side1, strength1 = direction_from_indicators(closes1)
-    side4, strength4 = direction_from_indicators(closes4)
+    cand_side = pick_candidate()
 
-    # 24h (freio): usa as últimas ~48h do 1H (mais estável que 24h exato)
-    closes_24 = closes1[-48:] if len(closes1) >= 48 else closes1
-    side24, _ = direction_from_indicators(closes_24)
-
-    # regra principal do SIDE
-    side_final = side1 if (side1 == side4 and side1 != "NÃO ENTRAR") else "NÃO ENTRAR"
-
-    # escolher modo (1H se estiver bem forte, senão 4H)
-    mode = "4H"
-    use_ohlc = ohlc_4h
-    atr_val = float(atr4)
-    strength = float(min(strength1, strength4))
-    if side_final != "NÃO ENTRAR":
-        if strength1 >= 0.65 and atr1 > 0:
-            mode = "1H"
-            use_ohlc = ohlc_1h
-            atr_val = float(atr1)
-
-    if atr_val <= 0 or side_final == "NÃO ENTRAR":
-        # ainda mostramos zona/risco/prioridade (para o painel não ficar "vazio")
-        atr_pct = (atr4 / max(1e-9, atual)) if atr4 > 0 else 0.0
-        risco, prioridade, zona = classify_levels(atr_pct, 0.0, "NÃO ENTRAR", side24)
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
-
-    # alvo / ganho (regra oficial)
-    target_dist = 1.5 * atr_val
-    if side_final == "LONG":
-        alvo = atual + target_dist
+    # 2) Cálculo sempre (mesmo se NÃO ENTRAR)
+    # alvo usa 1.5 * ATR (quando existe); se não existir, alvo=atual e ganho=0
+    if atr_val <= 0:
+        target_dist = 0.0
     else:
+        target_dist = 1.5 * atr_val
+
+    if cand_side == "LONG":
+        alvo = atual + target_dist
+    elif cand_side == "SHORT":
         alvo = atual - target_dist
+    else:
+        alvo = atual
 
-    ganho_pct = abs(alvo - atual) / max(1e-9, atual) * 100.0
+    gain_pct = pct_gain(cand_side, atual, alvo)
+    assert_pct = mfe_mae_assert(ohlc_1h, cand_side, target_dist, atr_val) if target_dist > 0 else 0.0
 
-    # filtro único de ganho
-    if ganho_pct < float(gain_min_pct):
-        atr_pct = atr_val / max(1e-9, atual)
-        risco, prioridade, zona = classify_levels(atr_pct, 0.0, "NÃO ENTRAR", side24)
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
+    # 3) Decisão final de entrada (sem mudar os cálculos)
+    concorda = (side1 == side4) and (side1 in ("LONG", "SHORT"))
+    passa_filtros = (gain_pct >= float(gain_min)) and (assert_pct >= float(assert_min))
 
-    # prazo estimado (base no ritmo médio do gráfico escolhido)
-    atr_pct = atr_val / max(1e-9, atual)
+    if concorda and passa_filtros:
+        # ENTRAR: preenche tudo
+        prazo = _fmt_prazo(target_dist, atr_val, prazo_base)
+        risco, prioridade, zona = classify_levels(gain_pct, assert_pct, target_dist, atr_val)
+        return Signal(par, side1, "PRO", atual, atual, alvo, gain_pct, prazo, assert_pct, zona, risco, prioridade, "MARK")
 
-    import statistics
-    trs_pct=[]
-    tf_hours = 1.0 if mode == "1H" else 4.0
-    for i in range(1, len(use_ohlc)):
-        h=float(use_ohlc[i][1]); l=float(use_ohlc[i][2]); c_prev=float(use_ohlc[i-1][3])
-        tr = max(h - l, abs(h - c_prev), abs(l - c_prev))
-        trs_pct.append(tr / max(1e-9, c_prev))
-    tail = trs_pct[-80:] if len(trs_pct) > 80 else trs_pct
-    med_tr_pct = statistics.median(tail) if tail else atr_pct
-    move_per_hour_pct = max(1e-6, med_tr_pct / tf_hours)
-
-    dist_pct = abs(alvo - atual) / max(1e-9, atual)
-    hours = dist_pct / move_per_hour_pct
-    hours_min = hours * 0.8
-    hours_max = hours * 1.2
-    prazo = _fmt_prazo(hours_min, hours_max)
-
-    assert_pct = mfe_mae_assert(use_ohlc, side_final, target_dist, atr_val, lookahead=12)
-
-    # filtro oficial de ASSERT
-    if float(assert_pct or 0.0) < float(assert_min_pct):
-        return Signal(par, "NÃO ENTRAR", "PRO", entrada, atual, atual, 0.0, "", 0.0, "", "", "", "MARK")
-
-    risco, prioridade, zona = classify_levels(atr_pct, ganho_pct, side_final, side24)
-
-    return Signal(par, side_final, "PRO", entrada, atual, alvo, ganho_pct, prazo, assert_pct, risco, prioridade, zona, "MARK")
+    # NÃO ENTRAR: mantém ALVO/GANHO/ASSERT calculados, zera (vazio) PRAZO/ZONA/RISCO/PRIORIDADE
+    return Signal(par, "NÃO ENTRAR", "PRO", atual, atual, alvo, gain_pct, "", assert_pct, "", "", "", "MARK")
