@@ -47,10 +47,30 @@ def _first_existing(paths: list[Path]) -> Path | None:
 DATA_DIR = os.environ.get("DATA_DIR", str(REPO_DIR / "data")).strip()
 
 # defaults
-_default_gain = 2.0
-_default_assert = 55.0
+_default_gain = 3.0
+_default_assert = 65.0
 
 # settings.json vira o default (env ainda pode sobrescrever)
+try:
+    _s = _load_json(WORKER_DIR / "config" / "settings.json")
+    if isinstance(_s, dict):
+        _default_gain = float(_s.get("gain_min_pct", _default_gain))
+        _default_assert = float(_s.get("assert_min_pct", _default_assert))
+except Exception:
+    pass
+
+_default_gain = 3.0
+_default_assert = 65.0
+try:
+    _s = _load_json(WORKER_DIR / "config" / "settings.json")
+    if isinstance(_s, dict):
+        _default_gain = float(_s.get("gain_min_pct", _default_gain))
+        _default_assert = float(_s.get("assert_min_pct", _default_assert))
+except Exception:
+    pass
+
+_default_gain = 3.0
+_default_assert = 65.0
 try:
     _s = _load_json(WORKER_DIR / "config" / "settings.json")
     if isinstance(_s, dict):
