@@ -20,11 +20,16 @@ from engine.compute import build_signal
 DATA_DIR = os.getenv("DATA_DIR", "/opt/ENTRADA-PRO/data")
 TZ_BRT = ZoneInfo("America/Sao_Paulo")
 
-
 def _sym(par: str) -> str:
-    # sem USDT na planilha; mas no exchange o símbolo é <PAR>USDT
-    return f"{par.upper()}USDT"
-
+    p = par.upper()
+    mult = {
+        "BONK": "1000BONK",
+        "FLOKI": "1000FLOKI",
+        "PEPE": "1000PEPE",
+        "SHIB": "1000SHIB",
+    }
+    base = mult.get(p, p)
+    return f"{base}USDT"
 
 def _now_brt():
     dt = datetime.now(TZ_BRT)
