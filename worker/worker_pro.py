@@ -121,7 +121,7 @@ def build_payload() -> Dict:
     items: List[Dict] = []
     miss_mark = 0
     miss_kl = 0
-
+    
     for par in coins:
         symbol = _sym(par)
 
@@ -134,19 +134,17 @@ def build_payload() -> Dict:
         if not k1 or not k4:
             miss_kl += 1
 
-# FALLBACK: se mark vier 0/None, usa último close do 4h (senão 1h)
-if (not mark) or float(mark) <= 0:
-    try:
-        if k4 and len(k4) >= 2:
-            mark = float(k4[-1][3])
-        elif k1 and len(k1) >= 2:
-            mark = float(k1[-1][3])
-    except Exception:
-        pass
-        
+        # FALLBACK: se mark vier 0/None, usa último close do 4h (senão 1h)
+        if (not mark) or float(mark) <= 0:
+            try:
+                if k4 and len(k4) >= 2:
+                    mark = float(k4[-1][3])
+                elif k1 and len(k1) >= 2:
+                    mark = float(k1[-1][3])
+            except Exception:
+                pass
+
         # Sempre calcula (sem "NÃO ENTRAR"):
-        # - se mark=0, build_signal usa fallback B (último close)
-        # - se klines faltarem, passa [] para manter estabilidade
         sig = build_signal(
             par=par,
             ohlc_1h=(k1 or []),
@@ -174,7 +172,7 @@ if (not mark) or float(mark) <= 0:
                 ttl_expira_em=ttl,
             )
         )
-
+    
     # FULL ordenado por PAR (estável)
     items.sort(key=lambda x: x.get("par") or "")
 
