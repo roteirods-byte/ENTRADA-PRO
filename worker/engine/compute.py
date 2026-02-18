@@ -190,7 +190,6 @@ def classify_qualitatives(strength: float, atr_pct: float, gain_pct: float) -> T
 
     return zona, risco, prioridade
 
-
 def build_signal(
     par: str,
     ohlc_1h,
@@ -199,49 +198,65 @@ def build_signal(
     gain_min_pct: float,
     assert_min_pct: float,
 ) -> Signal:
-    """Calcula sinal + métricas conforme as regras do projeto."""
-    atual = float(mark_price or 0.0)
-    if atual <= 0:
-        return Signal(par, "NÃO ENTRAR", 0.0, 0.0, 0.0, 0.0, "", "", "", "")
+    """Calcula sinal + métricas conforme as regras do projeto (SEM 'NÃO ENTRAR')."""
 
+    # FALLBACK B: se mark_price falhar, usa último close do 4h (senão 1h)
     o1 = _to_ohlc_list(ohlc_1h)
     o4 = _to_ohlc_list(ohlc_4h)
     c1 = _closes(o1)
     c4 = _closes(o4)
 
-    side_1h, s1 = direction_from_indicators(c1)
-    side_4h, s4 = direction_from_indicators(c4)
+    atual = float(mark_price or 0.0)
+    if atual <= 0:
+        if c4:
+            atual = float(c4[-1])
+        elif c1:
+            atual = float(c1[-1])
+        else:
+            # Sem preço possível -> mantém numérico estável, mas SEM 'NÃO ENTRAR'
+            return Signal(par, "LONG", 0.0, 0.0, 0.0, 0.0, "-", "", "", "")
 
-    # Se não houver alinhamento, NÃO ENTRAR (numérico estável)
-    if side_1h == "NÃO ENTRAR" or side_4h == "NÃO ENTRAR" or side_1h != side_4h:
-        return Signal(par, "NÃO ENTRAR", atual, atual, 0.0, 0.0, "", "", "", "")
+    side_1h, s1 = direction_from_indicators(c1) if c1 else ("NÃO ENTRAR", 0.0)
+    side_4h, s4 = direction_from_indicators(c4) if c4 else ("NÃO ENTRAR", 0.0)
 
-    side_candidate = side_4h
-    strength = float((s1 + s4) / 2.0)
+    # SIDE SEMPRE definido (1 linha por moeda):
+    if side_4h in ("LONG", "SHORT"):
+        side_candidate = side_4h
+        strength = float(s4)
+    elif side_1h in ("LONG", "SHORT"):
+        side_candidate = side_1h
+        strength = float(s1)
+    else:
+        # fallback simples quando os indicadores não definirem direção
+        if len(c4) >= 2:
+            side_candidate = "LONG" if c4[-1] >= c4[-2] else "SHORT"
+        elif len(c1) >= 2:
+            side_candidate = "LONG" if c1[-1] >= c1[-2] else "SHORT"
+        else:
+            side_candidate = "LONG"
+        strength = 0.0
 
     # ATR (usa 4h como principal)
-    atr_val = _atr_last(o4, 14)
+    atr_val = _atr_last(o4, 14) if o4 else 0.0
     if atr_val <= 0:
-        atr_val = _atr_last(o1, 14)
+        atr_val = _atr_last(o1, 14) if o1 else 0.0
 
-    # Alvo e ganho sempre calculados quando existe candidato
+    # Se ATR falhar, usa fallback proporcional (evita alvo=atual sempre)
+    if atr_val <= 0 and atual > 0:
+        atr_val = atual * 0.003  # 0.30% do preço (mínimo estável)
+
     alvo = compute_target_price(atual, atr_val, side_candidate, gain_min_pct)
     ganho_pct = compute_gain_pct(atual, alvo, side_candidate)
 
-    # Assertividade leve
     target_dist = abs(alvo - atual)
-    assert_pct = float(mfe_mae_assert(o4, side_candidate, target_dist, atr_val, lookahead=12))
+    assert_pct = float(mfe_mae_assert(o4, side_candidate, target_dist, atr_val, lookahead=12)) if o4 else 0.0
 
-    # aplica filtros
-    passes = (ganho_pct >= float(gain_min_pct)) and (assert_pct >= float(assert_min_pct))
-    if not passes:
-        return Signal(par, "NÃO ENTRAR", atual, float(alvo), float(ganho_pct), float(assert_pct), "", "", "", "")
-
-    atr_pct = float(atr_val / atual) if atual > 0 else 0.0
-    zona, risco, prioridade = classify_qualitatives(strength, atr_pct, ganho_pct)
+    # ZONA/RISCO/PRIORIDADE NÃO EXISTEM MAIS -> vazio
+    zona = ""
+    risco = ""
+    prioridade = ""
 
     # prazo estimado simples (ganho maior -> prazo menor). Escala estável.
-    # 2% -> ~6h, 4% -> ~4h, 6% -> ~3h (aprox)
     hours = max(0.5, 12.0 / max(1.0, float(ganho_pct)))
     prazo = _fmt_prazo(hours)
 
