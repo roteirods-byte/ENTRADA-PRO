@@ -21,3 +21,14 @@ yarn-error.log*
 # runtime logs
 /data/audit/
 /data/worker.log
+
+# === IGNORAR LIXO (BLOCO 1 / runtime) ===
+__pycache__/
+*.pyc
+*.bak*
+*.bkp*
+*.tmp
+data/worker.log
+data/audit/*.jsonl
+site.bkp_*/
+site_assets.bkp_*/
