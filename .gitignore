@@ -17,3 +17,6 @@ yarn-error.log*
 # segredos
 **/.env
 **/.env.*
+
+# runtime logs
+/data/audit/
