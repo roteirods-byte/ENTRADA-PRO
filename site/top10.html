@@ -5,6 +5,105 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>TOP10 • ENTRADA PRO</title>
 <link rel="stylesheet" href="./assets/style.css?v=20260209a" />
+
+
+
+
+
+
+<style id="compact-force-v8">
+/* 1) TAMANHO: + um pouco */
+th,td{
+  padding:8px 13px!important;
+  font-size:17px!important;
+  line-height:1.32!important;
+  white-space:nowrap!important;
+}
+table{
+  width:auto!important;
+  table-layout:auto!important;
+  border-collapse:collapse!important;
+  border-spacing:0!important;
+}
+
+/* 2) DEFINE “INÍCIO” = coluna PAR (mesmo alinhamento do painel) */
+table{ margin-left:auto!important; margin-right:auto!important; }
+:root{ --par-left: 0px; }
+
+/* pega o deslocamento do início do header PAR e aplica nos textos de cima */
+#app, main, body{}
+
+/* alinha TÍTULO, ATUALIZAÇÃO e BLOCO “Significado das colunas” */
+h1,h2,.title,.header,.topbar,.subheader,.updated,.lastUpdate,.ultima,.ultimaAtualizacao,.hint,.hintBox,.legend,.meaning{
+  margin-left: var(--par-left)!important;
+}
+
+/* Ajusta larguras mínimas por coluna (mantém tudo bonito) */
+th:nth-child(1),td:nth-child(1){min-width:60px}
+th:nth-child(2),td:nth-child(2){min-width:90px}
+th:nth-child(3),td:nth-child(3){min-width:112px}
+th:nth-child(4),td:nth-child(4){min-width:112px}
+th:nth-child(5),td:nth-child(5){min-width:92px}
+th:nth-child(6),td:nth-child(6){min-width:92px}
+th:nth-child(7),td:nth-child(7){min-width:72px}
+th:nth-child(8),td:nth-child(8){min-width:118px}
+th:nth-child(9),td:nth-child(9){min-width:72px}
+</style>
+
+<script id="align-par-v8">
+(function(){
+  function apply(){
+    const th = document.querySelector("table thead th");
+    if(!th) return;
+    const r = th.getBoundingClientRect();
+    // deslocamento do início da coluna PAR em relação ao viewport
+    document.documentElement.style.setProperty("--par-left", r.left + "px");
+  }
+  window.addEventListener("load", apply);
+  window.addEventListener("resize", apply);
+  setTimeout(apply, 250);
+})();
+</script>
+
+
+
+<link rel="icon" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="%230b3a43"/><circle cx="18" cy="18" r="6" fill="%23ff7a18"/><path d="M18 48V28h6v20zM30 48V22h6v26zM42 48V30h6v18z" fill="%23ffffff"/></svg>'>
+
+
+<style id="title-align-v10">
+/* Alinha TÍTULO + ATUALIZAÇÃO + SIGNIFICADO com a LARGURA da TABELA */
+:root{ --tablew: 980px; }
+
+table{ margin-left:auto!important; margin-right:auto!important; }
+
+h1,h2,.title,.header,.topbar,
+.updated,.lastUpdate,.ultima,.ultimaAtualizacao,
+.hint,.hintBox,.legend,.meaning{
+  width: var(--tablew)!important;
+  margin-left:auto!important;
+  margin-right:auto!important;
+  text-align:left!important;
+}
+
+/* Pequeno respiro entre título e atualização */
+h1,.title{ margin-bottom: 2px!important; }
+.updated,.lastUpdate,.ultima,.ultimaAtualizacao{ margin-top: 6px!important; }
+</style>
+
+<script id="title-align-js-v10">
+(function(){
+  function apply(){
+    var tbl = document.querySelector("table");
+    if(!tbl) return;
+    var w = Math.round(tbl.getBoundingClientRect().width);
+    if(w > 300) document.documentElement.style.setProperty("--tablew", w + "px");
+  }
+  window.addEventListener("load", apply);
+  window.addEventListener("resize", apply);
+  setTimeout(apply, 150);
+})();
+</script>
+
 </head>
 <body>
   <div class="container">
