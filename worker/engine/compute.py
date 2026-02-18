@@ -99,7 +99,8 @@ def compute_gain_pct(atual: float, alvo: float, side: str) -> float:
     if side == "LONG":
         return ((alvo - atual) / atual) * 100.0
     if side == "SHORT":
-        return ((atual - alvo) / atual) * 100.0
+        # CORREÇÃO: SHORT correto é (atual/alvo - 1)*100
+        return ((atual / alvo) - 1.0) * 100.0
     return 0.0
 
 
@@ -190,6 +191,7 @@ def classify_qualitatives(strength: float, atr_pct: float, gain_pct: float) -> T
 
     return zona, risco, prioridade
 
+
 def build_signal(
     par: str,
     ohlc_1h,
@@ -246,7 +248,10 @@ def build_signal(
         atr_val = atual * 0.003  # 0.30% do preço (mínimo estável)
 
     alvo = compute_target_price(atual, atr_val, side_candidate, gain_min_pct)
-    ganho_pct = compute_gain_pct(atual, alvo, side_candidate)
+    alvo = float(alvo)
+
+    # ganho SEMPRE consistente com atual/alvo finais
+    ganho_pct = float(compute_gain_pct(atual, alvo, side_candidate))
 
     target_dist = abs(alvo - atual)
     assert_pct = float(mfe_mae_assert(o4, side_candidate, target_dist, atr_val, lookahead=12)) if o4 else 0.0
@@ -264,8 +269,8 @@ def build_signal(
         par=par,
         side=side_candidate,
         atual=atual,
-        alvo=float(alvo),
-        ganho_pct=float(ganho_pct),
+        alvo=alvo,
+        ganho_pct=ganho_pct,
         assert_pct=float(assert_pct),
         prazo=prazo,
         zona=zona,
