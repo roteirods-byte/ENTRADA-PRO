@@ -1,13 +1,9 @@
-/* ENTRADA PRO - common.js (revisado)
-   Regras principais:
-   - FULL: base (77 moedas)
-   - TOP10: copia do FULL (top 10)
-   - Cores:
-     * GANHO %: >= 3% verde, < 3% vermelho
-     * ASSERT %: >= 65% verde, < 65% vermelho
-     * SIDE: LONG verde, SHORT vermelho, NAO ENTRAR amarelo
-     * ZONA: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho | PRIORIDADE: ALTA=verde, MÉDIA=laranja, BAIXA=vermelho
-   - Sem pagina extra
+/* ENTRADA PRO - common.js (BLOCO 3 - PAINEL)
+   Regra: o painel NÃO calcula trade. Só exibe o que veio pronto do JSON.
+   Cores:
+     * GANHO %: >= 2% verde, < 2% vermelho
+     * ASSERT %: >= 55% verde, < 55% vermelho
+     * SIDE: LONG verde, SHORT vermelho
 */
 
 'use strict';
@@ -20,14 +16,11 @@ function q(sel) { return document.querySelector(sel); }
 const COLS_FULL = [
   ['PAR', 'par'],
   ['SIDE', 'side'],
-   ['ATUAL', 'atual'],
+  ['ATUAL', 'atual'],
   ['ALVO', 'alvo'],
   ['GANHO %', 'ganho_pct'],
   ['ASSERT %', 'assert_pct'],
   ['PRAZO', 'prazo'],
-  ['ZONA', 'zona'],
-  ['RISCO', 'risco'],
-  ['PRIORIDADE', 'prioridade'],
   ['DATA', 'data'],
   ['HORA', 'hora'],
 ];
@@ -35,14 +28,11 @@ const COLS_FULL = [
 const COLS_TOP10 = [
   ['PAR', 'par'],
   ['SIDE', 'side'],
-   ['ATUAL', 'atual'],
+  ['ATUAL', 'atual'],
   ['ALVO', 'alvo'],
   ['GANHO %', 'ganho_pct'],
   ['ASSERT %', 'assert_pct'],
   ['PRAZO', 'prazo'],
-  ['ZONA', 'zona'],
-  ['RISCO', 'risco'],
-  ['PRIORIDADE', 'prioridade'],
   ['DATA', 'data'],
   ['HORA', 'hora'],
 ];
@@ -154,8 +144,8 @@ function normalizeItems(items, fallbackIso) {
 
 // ===== Cores =====
 // limiares do painel: serão atualizados dinamicamente a partir do JSON
-let GAIN_OK = 3.0;
-let ASSERT_OK = 65.0;
+let GAIN_OK = 2.0;
+let ASSERT_OK = 55.0;
 
 function gainClass(v) {
   const n = toNum(v);
@@ -311,81 +301,31 @@ function setBadges(info) {
 }
 
 
-/* PZRP_BLANK_V1 */
-function __pZrpBlank(side, key){
-  const t = String(side||'').toUpperCase()
-    .replaceAll('Á','A').replaceAll('À','A').replaceAll('Ã','A')
-    .replaceAll('É','E').replaceAll('Ê','E')
-    .replaceAll('Í','I')
-    .replaceAll('Ó','O').replaceAll('Ô','O')
-    .replaceAll('Ç','C');
-  const no = (t.includes('NAO ENTRAR') || t.includes('NÃO ENTRAR'));
-  if (!no) return false;
-  const k = String(key||'').toLowerCase();
-  return (k==='prazo' || k==='zona' || k==='risco' || k==='prioridade');
-}
-
 function renderTable(kind, items) {
   const cols = (kind === 'top10') ? COLS_TOP10 : COLS_FULL;
   const tbody = q('#tbl tbody');
   if (!tbody) return;
 
   const rows = Array.isArray(items) ? items : [];
-  const KEEP_NOENTER = new Set(['par','side','atual','ganho_pct','assert_pct','data','hora']);
 
   const html = rows.map(it => {
-    const sideRaw = fmtText((it && typeof it === 'object') ? it['side'] : '')
-      .toUpperCase()
-      .replace('NAO', 'NÃO');
-
-    const isNoEnter = sideRaw.includes('NÃO ENTRAR');
-
     return '<tr>' + cols.map(([_, key]) => {
-<<<<<<< Updated upstream
-      // REGRA: se NÃO ENTRAR, só mostra PAR,SIDE,ATUAL,GANHO%,ASSERT%,DATA,HORA
-      if (isNoEnter && !KEEP_NOENTER.has(key)) return `<td class=""></td>`;
-
-=======
-      /* NAO_ENTRAR_BLANK */
-      const _sidev = (it && typeof it === 'object') ? String(it['side'] || '') : '';
-      const _isNo = _sidev.toUpperCase().includes('NÃO') || _sidev.toUpperCase().includes('NAO');
-      /* PRAZO_RAW */
-        if (key === 'prazo') {
-          const _pv = (it && typeof it === 'object') ? (it['prazo'] ?? '') : '';
-        }
-
-       if (_isNo && ['prazo','zona','risco','prioridade'].includes(key)) {
-  return `<td class=""></td>`;
-}
-
-      const sideV = (it && typeof it === 'object') ? (it['side'] ?? it.side) : undefined;
-      const sideS = String(sideV ?? '').toUpperCase().replace('NAO','NÃO');
->>>>>>> Stashed changes
       const raw = (it && typeof it === 'object') ? it[key] : undefined;
-      let text = '-';
-// ✅ regra: quando NÃO ENTRAR e o valor vier vazio, mostrar célula vazia (sem "-")
-if (_isNo && (raw === null || raw === undefined || raw === '')) {
-  text = '';
-}
 
+      let text = '-';
       let cls = '';
 
       if (key === 'atual' || key === 'alvo') text = fmtPrice(raw);
       else if (key === 'ganho_pct') { text = fmtPct(raw); cls = gainClass(raw); }
       else if (key === 'assert_pct') { text = fmtPct(raw); cls = assertClass(raw); }
       else if (key === 'side') { text = fmtText(raw).toUpperCase().replace('NAO', 'NÃO'); cls = sideClass(raw); }
-      else if (key === 'zona') { text = fmtText(raw).toUpperCase(); cls = zoneClass(raw); }
-      else if (key === 'risco') { text = fmtText(raw).toUpperCase(); cls = tagClass(raw); }
-      else if (key === 'prioridade') { text = fmtText(raw).toUpperCase(); cls = priorityClass(raw); }
       else text = fmtText(raw);
 
-        return '<td class="' + cls + '">' + text + '</td>';
-
-
+      return '<td class="' + cls + '">' + text + '</td>';
     }).join('') + '</tr>';
   }).join('');
 
-  tbody.innerHTML = html || '<tr><td colspan="20" style="opacity:.7;padding:18px">Sem dados</td></tr>';
+  tbody.innerHTML = html || '<tr><td colspan="9" style="opacity:.7;padding:18px">Sem dados</td></tr>';
 }
 
 async function boot(kind) {
