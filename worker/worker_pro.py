@@ -134,6 +134,16 @@ def build_payload() -> Dict:
         if not k1 or not k4:
             miss_kl += 1
 
+# FALLBACK: se mark vier 0/None, usa último close do 4h (senão 1h)
+if (not mark) or float(mark) <= 0:
+    try:
+        if k4 and len(k4) >= 2:
+            mark = float(k4[-1][3])
+        elif k1 and len(k1) >= 2:
+            mark = float(k1[-1][3])
+    except Exception:
+        pass
+        
         # Sempre calcula (sem "NÃO ENTRAR"):
         # - se mark=0, build_signal usa fallback B (último close)
         # - se klines faltarem, passa [] para manter estabilidade
