@@ -1,101 +1,149 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AUDITORIA TOP10</title>
-  <link rel="stylesheet" href="/assets/style.css" />
-  <script defer src="/assets/common.js"></script>
+  <title>ENTRADA-PRO • Auditoria TOP10</title>
   <style>
-    /* fallback caso seu style.css não tenha */
-    body{margin:0}
-    .wrap{max-width:1100px;margin:0 auto;padding:14px}
-    .grid{display:grid;grid-template-columns:1fr;gap:12px}
-    @media (min-width: 980px){.grid{grid-template-columns:1fr 1fr}}
-    .card{border-radius:12px;padding:12px}
-    .card h2{margin:0 0 8px 0;font-size:18px}
-    table{width:100%;border-collapse:collapse}
-    th,td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}
-    th{text-align:left}
-    .muted{opacity:.8}
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#071a2b;color:#fff}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    h1{margin:0 0 10px;color:#ff8c00;font-size:22px}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .card{background:#0b2742;border:1px solid #123a5e;border-radius:10px;padding:12px;flex:1;min-width:260px}
+    .k{color:#ff8c00;font-weight:700;font-size:12px;letter-spacing:.5px}
+    .v{font-size:18px;margin-top:4px}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{border-bottom:1px solid #123a5e;padding:8px;text-align:left;font-size:13px}
+    th{color:#ff8c00}
+    .muted{opacity:.85}
+    .good{color:#00ff7f}
+    .bad{color:#ff4d4d}
+    .btn{display:inline-block;background:#1f78ff;color:#fff;padding:8px 10px;border-radius:8px;text-decoration:none;font-weight:700}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1 style="margin:6px 0 12px 0;">AUDITORIA TOP10</h1>
-    <div class="grid">
-      <div class="card" id="cardResumo">
-        <h2>Resumo</h2>
-        <div id="resumo" class="muted">Carregando...</div>
+    <div class="top">
+      <h1>Auditoria TOP10</h1>
+      <a class="btn" href="top10.html">Voltar TOP10</a>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <div class="k">ATUALIZADO (BRT)</div>
+        <div class="v" id="updated">--</div>
+        <div class="muted" style="margin-top:6px">Endpoint: <span id="ep"></span></div>
       </div>
-      <div class="card" id="cardAbertos">
-        <h2>Sinais em aberto</h2>
-        <div id="abertos" class="muted">Carregando...</div>
+      <div class="card">
+        <div class="k">ABERTAS AGORA</div>
+        <div class="v" id="open_count">--</div>
+      </div>
+      <div class="card">
+        <div class="k">TOTAL FECHADAS</div>
+        <div class="v" id="total">--</div>
+      </div>
+      <div class="card">
+        <div class="k">PNL MÉDIO (%)</div>
+        <div class="v" id="pnl_avg">--</div>
       </div>
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <h2>Últimos fechados</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>PAR</th><th>SIDE</th><th>ENTRADA</th><th>ALVO</th><th>INVALIDADO</th>
-            <th>RESULT</th><th>PNL%</th><th>ABERTO</th><th>FECHOU</th>
-          </tr>
-        </thead>
-        <tbody id="lastClosed"></tbody>
-      </table>
+    <div class="row" style="margin-top:12px">
+      <div class="card">
+        <div class="k">MELHORES JANELAS (DIA + HORA)</div>
+        <table>
+          <thead><tr><th>Dia</th><th>Hora</th><th>N</th><th>PNL médio %</th></tr></thead>
+          <tbody id="best"></tbody>
+        </table>
+        <div class="muted" style="margin-top:8px">
+          * Quanto maior o N, mais confiável. (no começo pode oscilar)
+        </div>
+      </div>
     </div>
 
-    <p class="muted" style="margin-top:10px">Fonte: /api/audit/summary</p>
+    <div class="row" style="margin-top:12px">
+      <div class="card">
+        <div class="k">POR DIA DA SEMANA</div>
+        <table>
+          <thead><tr><th>Dia</th><th>N</th><th>PNL médio %</th></tr></thead>
+          <tbody id="by_dow"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="k">POR HORA (BRT)</div>
+        <table>
+          <thead><tr><th>Hora</th><th>N</th><th>PNL médio %</th></tr></thead>
+          <tbody id="by_hour"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
 <script>
-async function loadAudit(){
-  const url = '/api/audit/summary';
-  const r = await fetch(url, {cache:'no-store'});
-  if(!r.ok) throw new Error('HTTP '+r.status);
-  const j = await r.json();
+  const endpoint = "/api/audit/summary";
+  document.getElementById("ep").textContent = endpoint;
 
-  const c = j.closed_cycle || {};
-  document.getElementById('resumo').innerHTML =
-    `Atualizado: <b>${j.updated_at_brt || '-'}</b><br>`+
-    `Fechados (ciclo): total=<b>${c.total||0}</b> | WIN=<b>${c.win||0}</b> | LOSS=<b>${c.loss||0}</b> | EXPIRED=<b>${c.expired||0}</b><br>`+
-    `WinRate (ciclo): <b>${(c.win_rate_pct||0).toFixed(2)}%</b>`;
+  function fmt(n){
+    if (n === null || n === undefined || isNaN(n)) return "--";
+    const x = Number(n);
+    return x.toFixed(3);
+  }
+  function clsPNL(x){
+    const v = Number(x);
+    if (isNaN(v)) return "";
+    return v >= 0 ? "good" : "bad";
+  }
 
-  document.getElementById('abertos').innerHTML =
-    `Abertos agora: <b>${j.open_count||0}</b>`;
+  async function load(){
+    const r = await fetch(endpoint + "?t=" + Date.now(), {cache:"no-store"});
+    const j = await r.json();
 
-  const tb = document.getElementById('lastClosed');
-  tb.innerHTML = '';
-  (j.last_closed || []).forEach(x=>{
-    const tr = document.createElement('tr');
-    const pnl = Number(x.pnl_pct_real||0);
-    tr.innerHTML =
-      `<td>${x.par||''}</td>`+
-      `<td>${x.side||''}</td>`+
-      `<td>${fmtNum(x.entrada)}</td>`+
-      `<td>${fmtNum(x.alvo)}</td>`+
-      `<td>${fmtNum(x.invalidado)}</td>`+
-      `<td>${x.result||''}/${x.hit||''}</td>`+
-      `<td class="${pnl>=0?'pos':'neg'}">${pnl.toFixed(2)}%</td>`+
-      `<td>${x.ts_brt||''}</td>`+
-      `<td>${x.close_ts_brt||''}</td>`;
-    tb.appendChild(tr);
-  });
-}
+    document.getElementById("updated").textContent = j.updated_at_brt || "--";
+    document.getElementById("open_count").textContent = (j.open_count ?? "--");
 
-function fmtNum(v){
-  const n = Number(v||0);
-  // moedas baratas: mostra mais casas se precisar
-  if(n !== 0 && Math.abs(n) < 0.01) return n.toFixed(8);
-  return n.toFixed(3);
-}
+    const overall = j.overall || {};
+    document.getElementById("total").textContent = (overall.total ?? "--");
+    document.getElementById("pnl_avg").innerHTML =
+      `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt(overall.pnl_avg_pct)}</span>`;
 
-loadAudit().catch(e=>{
-  document.getElementById('resumo').textContent = 'Erro ao carregar: '+e.message;
-  document.getElementById('abertos').textContent = '—';
-});
+    // best_windows
+    const best = Array.isArray(j.best_windows) ? j.best_windows : [];
+    document.getElementById("best").innerHTML = best.map(x => `
+      <tr>
+        <td>${x.dow || "-"}</td>
+        <td>${x.hour || "-"}</td>
+        <td>${x.n ?? "-"}</td>
+        <td class="${clsPNL(x.pnl_avg_pct)}">${fmt(x.pnl_avg_pct)}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="4" class="muted">Sem dados suficientes ainda.</td></tr>`;
+
+    // by_dow
+    const by_dow = j.by_dow || {};
+    const dowKeys = Object.keys(by_dow);
+    document.getElementById("by_dow").innerHTML = dowKeys.map(k => `
+      <tr>
+        <td>${k}</td>
+        <td>${by_dow[k].n ?? "-"}</td>
+        <td class="${clsPNL(by_dow[k].pnl_avg_pct)}">${fmt(by_dow[k].pnl_avg_pct)}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`;
+
+    // by_hour
+    const by_hour = j.by_hour || {};
+    const hourKeys = Object.keys(by_hour).sort();
+    document.getElementById("by_hour").innerHTML = hourKeys.map(k => `
+      <tr>
+        <td>${k}:00</td>
+        <td>${by_hour[k].n ?? "-"}</td>
+        <td class="${clsPNL(by_hour[k].pnl_avg_pct)}">${fmt(by_hour[k].pnl_avg_pct)}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`;
+  }
+
+  load();
+  setInterval(load, 60_000); // atualiza a tela a cada 1 min (sem pesar)
 </script>
 </body>
 </html>
