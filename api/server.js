@@ -74,6 +74,7 @@ app.get('/', (req, res) => {
     `GET /api/version OR GET /version\n` +
     `GET /api/pro OR GET /pro\n` +
     `GET /api/top10 OR GET /top10\n` +
+    `GET /api/audit/summary OR GET /audit/summary\n` +
     `GET /api/health OR GET /health\n`
   );
 });
@@ -91,6 +92,11 @@ app.get(['/api/version', '/version'], (req, res) => res.status(200).json(version
 
 app.get(['/api/pro', '/pro'], async (req, res) => sendJsonFromFile(res, 'pro.json'));
 app.get(['/api/top10', '/top10'], async (req, res) => sendJsonFromFile(res, 'top10.json'));
+
+// AUDITORIA TOP10 (BLOCO AUDITORIA) - só lê arquivo gerado em data/audit/
+app.get(['/api/audit/summary', '/audit/summary'], async (req, res) =>
+  sendJsonFromFile(res, path.join('audit', 'top10_summary.json'))
+);
 
 // ====== START ======
 app.listen(PORT, () => {
