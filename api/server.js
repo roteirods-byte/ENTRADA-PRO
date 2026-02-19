@@ -59,7 +59,6 @@ async function sendJsonFromFile(res, filename) {
       ok: false,
       service: SERVICE,
       now_utc: nowUtc(),
-      data_dir: DATA_DIR,
       file: filename,
       error: msg,
     });
@@ -85,7 +84,6 @@ function versionPayload() {
     service: SERVICE,
     version: process.env.APP_VERSION || 'unknown',
     now_utc: nowUtc(),
-    data_dir: DATA_DIR,
   };
 }
 
