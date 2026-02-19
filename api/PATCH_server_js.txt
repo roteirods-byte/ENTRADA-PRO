@@ -1,0 +1,10 @@
+*** BLOCO AUDITORIA - PATCH MÍNIMO (api/server.js) ***
+Adicionar após as rotas /api/top10 e /api/pro:
+
+// AUDITORIA TOP10 (BLOCO AUDITORIA) - só lê arquivo gerado em data/audit/
+app.get(['/api/audit/summary', '/audit/summary'], async (req, res) =>
+  sendJsonFromFile(res, path.join('audit', 'top10_summary.json'))
+);
+
+Obs: DATA_DIR já aponta para /opt/ENTRADA-PRO/data, então isso lê:
+  /opt/ENTRADA-PRO/data/audit/top10_summary.json

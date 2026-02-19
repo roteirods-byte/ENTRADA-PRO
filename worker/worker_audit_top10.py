@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# worker/worker_audit_top10.py
+# BLOCO AUDITORIA: acompanha sinais do TOP10 e fecha WIN/LOSS/TTL a cada 5 min
+
 import os
 import time
 
@@ -11,7 +14,7 @@ def main():
         try:
             run_audit_top10(data_dir=DATA_DIR, api_source="BYBIT")
         except Exception:
-            # auditoria nunca pode derrubar o servidor
+            # Auditoria nunca pode derrubar o servidor
             pass
         time.sleep(300)
 

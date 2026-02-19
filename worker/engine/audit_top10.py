@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+"""
+BLOCO AUDITORIA (TOP10) - ENTRADA-PRO
+- NÃO altera cálculo do TOP10.
+- Só lê data/top10.json, acompanha preço (BYBIT) e fecha cada sinal como:
+  WIN (bateu ALVO) | LOSS (bateu INVALIDADO) | EXPIRED (TTL).
+- Gera arquivos em data/audit/ para o painel audit.html (somente leitura).
+
+Arquivos gerados:
+- data/audit/top10_open.json
+- data/audit/top10_closed.jsonl
+- data/audit/top10_summary.json
+"""
+
 import json
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from .io import atomic_write_json
@@ -23,6 +36,7 @@ def _now_utc() -> datetime:
 
 
 def _parse_iso_z(s: str) -> Optional[datetime]:
+    """Parse ISO 8601 com Z para datetime UTC."""
     try:
         if not s:
             return None
@@ -49,29 +63,6 @@ def _read_json(path: Path, default: Any) -> Any:
         return default
 
 
-def _read_jsonl(path: Path, max_lines: int = 5000) -> List[Dict[str, Any]]:
-    """
-    Lê JSONL com limite (seguro). Para seu caso (117 linhas), lê tudo.
-    """
-    out: List[Dict[str, Any]] = []
-    try:
-        if not path.exists():
-            return out
-        # lê do fim (simples e suficiente aqui)
-        lines = path.read_text(encoding="utf-8").splitlines()
-        for line in lines[-max_lines:]:
-            line = (line or "").strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except Exception:
-                continue
-    except Exception:
-        return out
-    return out
-
-
 def _append_jsonl(path: Path, obj: Dict[str, Any]) -> None:
     line = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
     with path.open("a", encoding="utf-8") as f:
@@ -79,6 +70,7 @@ def _append_jsonl(path: Path, obj: Dict[str, Any]) -> None:
 
 
 def _sym(par: str) -> str:
+    """Mesmo mapeamento do worker_pro.py (moedas muito baratas)."""
     p = (par or "").upper().strip()
     mult = {
         "BONK": "1000BONK",
@@ -96,6 +88,10 @@ def _audit_id(par: str, side: str, entrada: float, alvo: float, ttl: str) -> str
 
 
 def _atr_from_entry_target(entrada: float, alvo: float) -> float:
+    """
+    Regra: ALVO = ENTRADA ± 1.5*ATR  => ATR = |ALVO-ENTRADA|/1.5
+    (permite auditar sem precisar ATR no JSON)
+    """
     try:
         d = abs(float(alvo) - float(entrada))
         return float(d) / 1.5 if d > 0 else 0.0
@@ -104,12 +100,14 @@ def _atr_from_entry_target(entrada: float, alvo: float) -> float:
 
 
 def _invalidado(entrada: float, atr: float, side: str) -> float:
+    """INVALIDADO (corte): 1.0*ATR contra a entrada."""
     if side == "LONG":
         return float(entrada) - float(atr)
     return float(entrada) + float(atr)
 
 
 def _pnl_pct(side: str, entrada: float, preco: float) -> float:
+    """PNL% real no ponto atual/fechamento."""
     try:
         e = float(entrada)
         p = float(preco)
@@ -124,12 +122,17 @@ def _pnl_pct(side: str, entrada: float, preco: float) -> float:
 
 @dataclass
 class CloseResult:
-    hit: str
-    result: str
+    hit: str      # ALVO | INVALIDADO | TTL
+    result: str   # WIN | LOSS | EXPIRED
     close_price: float
 
 
 def _check_close(side: str, preco: float, alvo: float, inv: float, ttl_utc: Optional[datetime]) -> Optional[CloseResult]:
+    """
+    Prioridade:
+      1) ALVO / INVALIDADO
+      2) TTL
+    """
     p = float(preco)
     a = float(alvo)
     i = float(inv)
@@ -139,113 +142,25 @@ def _check_close(side: str, preco: float, alvo: float, inv: float, ttl_utc: Opti
             return CloseResult("ALVO", "WIN", p)
         if i > 0 and p <= i:
             return CloseResult("INVALIDADO", "LOSS", p)
-    else:
+    else:  # SHORT
         if a > 0 and p <= a:
             return CloseResult("ALVO", "WIN", p)
         if i > 0 and p >= i:
             return CloseResult("INVALIDADO", "LOSS", p)
 
     if ttl_utc is not None and _now_utc() >= ttl_utc:
-        # TTL: fecha por PNL (TIMEOUT)
-        # WIN se pnl>0, LOSS se pnl<0, FLAT se ==0
-        pnl = _pnl_pct(side, entrada, p) if False else None
-        # (pnl real será calculado fora; aqui só marca hit)
-        return CloseResult("TTL", "TIMEOUT", p)
+        return CloseResult("TTL", "EXPIRED", p)
 
     return None
 
 
-def _dow_name_pt(dow: int) -> str:
-    # Monday=0
-    names = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
-    return names[dow] if 0 <= dow <= 6 else "?"
-
-
-def _parse_brt_ts(ts_brt: str) -> Optional[datetime]:
-    try:
-        # "YYYY-MM-DD HH:MM"
-        return datetime.strptime(ts_brt, "%Y-%m-%d %H:%M").replace(tzinfo=TZ_BRT)
-    except Exception:
-        return None
-
-
-def _agg_best(closed_rows: List[Dict[str, Any]], min_n: int = 8) -> Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, Any]]]:
-    """
-    Retorna:
-      by_dow: {SEG:{n,win,loss,expired,win_rate,pnl_avg}, ...}
-      by_hour: {"00":{...}, ... "23":{...}}
-      best_windows: top 5 de (DIA+HORA) por win_rate (>=min_n)
-    """
-    by_dow: Dict[str, Dict[str, float]] = {}
-    by_hour: Dict[str, Dict[str, float]] = {}
-    by_win: Dict[str, Dict[str, float]] = {}
-
-    def upd(bucket: Dict[str, Dict[str, float]], key: str, r: Dict[str, Any]):
-        b = bucket.setdefault(key, {"n": 0, "win": 0, "loss": 0, "expired": 0, "pnl_sum": 0.0})
-        b["n"] += 1
-        res = str(r.get("result") or "")
-        if res == "WIN":
-            b["win"] += 1
-        elif res == "LOSS":
-            b["loss"] += 1
-        else:
-            b["expired"] += 1
-        b["pnl_sum"] += float(r.get("pnl_pct_real") or 0.0)
-
-    for r in closed_rows:
-        ts = _parse_brt_ts(str(r.get("ts_brt") or ""))
-        if not ts:
-            continue
-        dow = _dow_name_pt(ts.weekday())
-        hh = f"{ts.hour:02d}"
-        upd(by_dow, dow, r)
-        upd(by_hour, hh, r)
-        upd(by_win, f"{dow}_{hh}", r)
-
-    def finalize(bucket: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        for k, b in bucket.items():
-            n = int(b["n"])
-            win = int(b["win"])
-            loss = int(b["loss"])
-            exp = int(b["expired"])
-            win_rate = (win / n * 100.0) if n > 0 else 0.0
-            pnl_avg = (b["pnl_sum"] / n) if n > 0 else 0.0
-            out[k] = {
-                "n": n,
-                "win": win,
-                "loss": loss,
-                "expired": exp,
-                "win_rate_pct": win_rate,
-                "pnl_avg_pct": pnl_avg,
-            }
-        return out
-
-    by_dow_f = finalize(by_dow)
-    by_hour_f = finalize(by_hour)
-
-    best: List[Dict[str, Any]] = []
-    for k, b in by_win.items():
-        n = int(b["n"])
-        if n < min_n:
-            continue
-        win = int(b["win"])
-        win_rate = (win / n * 100.0) if n > 0 else 0.0
-        pnl_avg = (b["pnl_sum"] / n) if n > 0 else 0.0
-        dow, hh = k.split("_", 1)
-        best.append({
-            "dow": dow,
-            "hour": hh,
-            "n": n,
-            "win_rate_pct": win_rate,
-            "pnl_avg_pct": pnl_avg,
-        })
-
-    best.sort(key=lambda x: (x["win_rate_pct"], x["n"]), reverse=True)
-    return by_dow_f, by_hour_f, best[:5]
-
-
 def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed: int = 20) -> Dict[str, Any]:
+    """
+    - Lê data/top10.json
+    - Abre novos sinais em data/audit/top10_open.json
+    - Atualiza preço e fecha sinais em data/audit/top10_closed.jsonl
+    - Gera resumo em data/audit/top10_summary.json
+    """
     data_dir = data_dir or "/opt/ENTRADA-PRO/data"
     audit_dir = _audit_dir(data_dir)
 
@@ -259,7 +174,7 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
     open_list: List[Dict[str, Any]] = _read_json(open_path, default=[])
     open_by_id = {str(x.get("audit_id")): x for x in open_list if x.get("audit_id")}
 
-    # ---------- CAPTURA ----------
+    # ---------- CAPTURA: abre novos ----------
     now_brt = _now_brt()
     now_brt_str = now_brt.strftime("%Y-%m-%d %H:%M")
     date_brt = now_brt.strftime("%Y-%m-%d")
@@ -272,7 +187,7 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
             if not par or side not in ("LONG", "SHORT"):
                 continue
 
-            entrada = float(it.get("atual") or 0.0)
+            entrada = float(it.get("atual") or 0.0)  # entrada = atual no momento do sinal
             alvo = float(it.get("alvo") or 0.0)
             ttl = str(it.get("ttl_expira_em") or "").strip()
             if entrada <= 0 or alvo <= 0 or not ttl:
@@ -300,18 +215,19 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
                 "prazo": str(it.get("prazo") or "-"),
                 "price_source": str(it.get("price_source") or "NONE"),
                 "ttl_expira_em": ttl,
+                # métricas durante a vida
                 "mfe_pct": 0.0,
                 "mae_pct": 0.0,
             }
         except Exception:
             continue
 
-    # ---------- FECHAMENTO ----------
+    # ---------- ATUALIZA OPEN / FECHA ----------
     new_open: List[Dict[str, Any]] = []
     closed_cycle: List[Dict[str, Any]] = []
     win = loss = expired = 0
 
-    for _aid, s in list(open_by_id.items()):
+    for aid, s in list(open_by_id.items()):
         try:
             par = str(s.get("par"))
             side = str(s.get("side"))
@@ -358,53 +274,26 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
         except Exception:
             new_open.append(s)
 
+    # grava open
     atomic_write_json(open_path, new_open)
 
-    # ---------- HISTÓRICO + MELHORES DIAS/HORAS ----------
-    closed_hist = _read_jsonl(closed_path, max_lines=20000)
-    # último N
-    last_closed_hist = closed_hist[-max_last_closed:]
+    # ---------- RESUMO ----------
+    total = win + loss + expired
+    win_rate = (win / total * 100.0) if total > 0 else 0.0
 
-    # overall
-    total_all = len(closed_hist)
-    w_all = sum(1 for r in closed_hist if str(r.get("result")) == "WIN")
-    l_all = sum(1 for r in closed_hist if str(r.get("result")) == "LOSS")
-    e_all = sum(1 for r in closed_hist if str(r.get("result")) == "EXPIRED")
-    win_rate_all = (w_all / total_all * 100.0) if total_all > 0 else 0.0
-    pnl_avg_all = (sum(float(r.get("pnl_pct_real") or 0.0) for r in closed_hist) / total_all) if total_all > 0 else 0.0
-
-    by_dow, by_hour, best_windows = _agg_best(closed_hist, min_n=8)
-
-    # resumo por ciclo (para debug)
-    total_cycle = win + loss + expired
-    win_rate_cycle = (win / total_cycle * 100.0) if total_cycle > 0 else 0.0
+    last_closed = closed_cycle[-max_last_closed:]
 
     summary = {
         "ok": True,
         "updated_at_brt": _now_brt().strftime("%Y-%m-%d %H:%M"),
         "open_count": len(new_open),
-
-        "overall": {
-            "total": total_all,
-            "win": w_all,
-            "loss": l_all,
-            "expired": e_all,
-            "win_rate_pct": win_rate_all,
-            "pnl_avg_pct": pnl_avg_all,
-        },
-
-        "by_dow": by_dow,
-        "by_hour": by_hour,
-        "best_windows": best_windows,
-
         "closed_cycle": {
-            "total": total_cycle,
+            "total": total,
             "win": win,
             "loss": loss,
             "expired": expired,
-            "win_rate_pct": win_rate_cycle,
+            "win_rate_pct": win_rate,
         },
-
         "last_closed": [
             {
                 "par": x.get("par"),
@@ -417,7 +306,7 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
                 "pnl_pct_real": x.get("pnl_pct_real"),
                 "ts_brt": x.get("ts_brt"),
                 "close_ts_brt": x.get("close_ts_brt"),
-            } for x in last_closed_hist
+            } for x in last_closed
         ],
     }
 

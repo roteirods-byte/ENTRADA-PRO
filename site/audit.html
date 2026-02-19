@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AUDITORIA TOP10</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+  <script defer src="/assets/common.js"></script>
+  <style>
+    /* fallback caso seu style.css não tenha */
+    body{margin:0}
+    .wrap{max-width:1100px;margin:0 auto;padding:14px}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    @media (min-width: 980px){.grid{grid-template-columns:1fr 1fr}}
+    .card{border-radius:12px;padding:12px}
+    .card h2{margin:0 0 8px 0;font-size:18px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}
+    th{text-align:left}
+    .muted{opacity:.8}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="margin:6px 0 12px 0;">AUDITORIA TOP10</h1>
+    <div class="grid">
+      <div class="card" id="cardResumo">
+        <h2>Resumo</h2>
+        <div id="resumo" class="muted">Carregando...</div>
+      </div>
+      <div class="card" id="cardAbertos">
+        <h2>Sinais em aberto</h2>
+        <div id="abertos" class="muted">Carregando...</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Últimos fechados</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>PAR</th><th>SIDE</th><th>ENTRADA</th><th>ALVO</th><th>INVALIDADO</th>
+            <th>RESULT</th><th>PNL%</th><th>ABERTO</th><th>FECHOU</th>
+          </tr>
+        </thead>
+        <tbody id="lastClosed"></tbody>
+      </table>
+    </div>
+
+    <p class="muted" style="margin-top:10px">Fonte: /api/audit/summary</p>
+  </div>
+
+<script>
+async function loadAudit(){
+  const url = '/api/audit/summary';
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const j = await r.json();
+
+  const c = j.closed_cycle || {};
+  document.getElementById('resumo').innerHTML =
+    `Atualizado: <b>${j.updated_at_brt || '-'}</b><br>`+
+    `Fechados (ciclo): total=<b>${c.total||0}</b> | WIN=<b>${c.win||0}</b> | LOSS=<b>${c.loss||0}</b> | EXPIRED=<b>${c.expired||0}</b><br>`+
+    `WinRate (ciclo): <b>${(c.win_rate_pct||0).toFixed(2)}%</b>`;
+
+  document.getElementById('abertos').innerHTML =
+    `Abertos agora: <b>${j.open_count||0}</b>`;
+
+  const tb = document.getElementById('lastClosed');
+  tb.innerHTML = '';
+  (j.last_closed || []).forEach(x=>{
+    const tr = document.createElement('tr');
+    const pnl = Number(x.pnl_pct_real||0);
+    tr.innerHTML =
+      `<td>${x.par||''}</td>`+
+      `<td>${x.side||''}</td>`+
+      `<td>${fmtNum(x.entrada)}</td>`+
+      `<td>${fmtNum(x.alvo)}</td>`+
+      `<td>${fmtNum(x.invalidado)}</td>`+
+      `<td>${x.result||''}/${x.hit||''}</td>`+
+      `<td class="${pnl>=0?'pos':'neg'}">${pnl.toFixed(2)}%</td>`+
+      `<td>${x.ts_brt||''}</td>`+
+      `<td>${x.close_ts_brt||''}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function fmtNum(v){
+  const n = Number(v||0);
+  // moedas baratas: mostra mais casas se precisar
+  if(n !== 0 && Math.abs(n) < 0.01) return n.toFixed(8);
+  return n.toFixed(3);
+}
+
+loadAudit().catch(e=>{
+  document.getElementById('resumo').textContent = 'Erro ao carregar: '+e.message;
+  document.getElementById('abertos').textContent = '—';
+});
+</script>
+</body>
+</html>
