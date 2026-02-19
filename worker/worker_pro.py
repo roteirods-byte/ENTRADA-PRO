@@ -190,6 +190,24 @@ def build_payload() -> Dict:
 
     return payload
 
+
+def _clean_item(x: dict) -> dict:
+    # mantém só as colunas válidas do painel
+    keep = {
+        "par","side","atual","alvo","ganho_pct","assert_pct","prazo","data","hora",
+        "price_source","ttl_expira_em"
+    }
+    return {k: x.get(k) for k in keep if k in x}
+
+def _clean_payload(d: dict) -> dict:
+    d = dict(d)
+    items = list(d.get("items") or [])
+    d["items"] = [_clean_item(it) for it in items]
+    # remove campos mortos no topo do JSON (se existirem)
+    for k in ["zona","risco","prioridade","rank_pts","nao_entrar","não_entrar","naoEntrar"]:
+        if k in d: d.pop(k, None)
+    return d
+
 def write_json(path: str, data: Dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
@@ -202,22 +220,24 @@ import time
 def main():
     while True:
         payload = build_payload()
-        write_json(os.path.join(DATA_DIR, "pro.json"), payload)
+        payload = _clean_payload(payload)
+          write_json(os.path.join(DATA_DIR, "pro.json"), payload)
 
         # TOP10 (regra nova): ordenar por ASSERT desc -> GANHO desc -> PRAZO asc
         ls = list(payload.get("items") or [])
-        ls.sort(
+        ls = sorted(
+            ls,
             key=lambda x: (
-                float(x.get("assert_pct") or 0.0),
-                float(x.get("ganho_pct") or 0.0),
-                -_prazo_min(x.get("prazo") or "-"),
+                -float(x.get("assert_pct") or 0.0),
+                -float(x.get("ganho_pct") or 0.0),
+                str(x.get("par") or ""),
             ),
-            reverse=True,
         )
 
         top10 = dict(payload)
         top10["items"] = ls[:10]
-        write_json(os.path.join(DATA_DIR, "top10.json"), top10)
+        top10 = _clean_payload(top10)
+          write_json(os.path.join(DATA_DIR, "top10.json"), top10)
 
         time.sleep(300)
 
