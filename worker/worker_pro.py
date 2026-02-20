@@ -1,213 +1,160 @@
+cat > /opt/ENTRADA-PRO/worker/worker_pro.py <<'PY'
 #!/usr/bin/env python3
-# worker/worker_pro.py
-# Gera data/pro.json e data/top10.json para o painel ENTRADA-PRO (FULL + TOP10)
-# REGRAS NOVAS (BLOCO 1):
-# - NÃO EXISTE "NÃO ENTRAR" (SIDE sempre LONG/SHORT)
-# - NÃO EXISTEM colunas ZONA/RISCO/PRIORIDADE (não saem no JSON)
-# - 1 linha por moeda
-# - Fallback B do mark_price é tratado dentro do build_signal (compute.py)
+import os, json, time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Dict, List, Tuple, Optional
 
-import json
-import os
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Tuple
+import requests
 from zoneinfo import ZoneInfo
 
-from engine.config import load_settings, get_thresholds, get_coins
-from engine.exchanges import fetch_mark_price, fetch_klines
-from engine.compute import build_signal
+BRT = ZoneInfo("America/Sao_Paulo")
+DATA_DIR = os.environ.get("DATA_DIR", "/opt/ENTRADA-PRO/data")
 
-DATA_DIR = os.getenv("DATA_DIR", "/opt/ENTRADA-PRO/data")
-TZ_BRT = ZoneInfo("America/Sao_Paulo")
+# ---------- Config ----------
+BYBIT_BASE = "https://api.bybit.com"
 
-def _sym(par: str) -> str:
-    p = par.upper()
-    mult = {
-        "BONK": "1000BONK",
-        "FLOKI": "1000FLOKI",
-        "PEPE": "1000PEPE",
-        "SHIB": "1000SHIB",
-    }
-    base = mult.get(p, p)
-    return f"{base}USDT"
-
-def _now_brt():
-    dt = datetime.now(TZ_BRT)
+def _now_brt() -> Tuple[datetime, str, str]:
+    dt = datetime.now(tz=BRT)
     return dt, dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
 
+def _iso_utc_now() -> str:
+    return datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
-def _ttl_iso(minutes: int = 6) -> str:
-    return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat().replace("+00:00", "Z")
+def _ttl_iso(hours: float) -> str:
+    return (datetime.now(tz=timezone.utc) + (hours * 3600) * (datetime.now(tz=timezone.utc) - datetime.now(tz=timezone.utc))).isoformat()  # placeholder, overwritten below
 
+# fix ttl without extra imports
+def _ttl_iso(hours: float) -> str:
+    return (datetime.now(tz=timezone.utc) + (timezone.utc.utcoffset(datetime.now()) or (datetime.now(tz=timezone.utc)-datetime.now(tz=timezone.utc)))).isoformat().replace("+00:00","Z")
+
+# simpler ttl: add seconds
+def _ttl_iso(hours: float) -> str:
+    return (datetime.now(tz=timezone.utc) + (hours * 3600) * (datetime.fromtimestamp(1, tz=timezone.utc) - datetime.fromtimestamp(0, tz=timezone.utc))).isoformat().replace("+00:00","Z")
+
+# ---------- Settings ----------
+def load_settings() -> dict:
+    # mantemos thresholds fixos (você pode plugar settings depois)
+    return {
+        "gain_min_pct": 2.0,
+        "assert_min_pct": 55.0,
+        "coins": [
+            "AAVE","ADA","APE","APT","AR","ARB","ATOM","AVAX","AXS","BAT","BCH","BLUR","BNB","BONK","BTC","COMP","CRV","DASH","DGB","DENT","DOGE","DOT","EGLD","EOS","ETC","ETH","FET","FIL","FLOKI","FLOW","FTM","GALA","GLM","GRT","HBAR","IMX","INJ","IOST","ICP","KAS","KAVA","KSM","LINK","LTC","MANA","MATIC","MKR","NEO","NEAR","OMG","ONT","OP","ORDI","PEPE","QNT","QTUM","RNDR","ROSE","RUNE","SAND","SEI","SHIB","SNX","SOL","STX","SUI","SUSHI","TIA","THETA","TRX","UNI","VET","XRP","XEM","XLM","XVS","ZEC","ZRX"
+        ]
+    }
+
+def get_thresholds(s: dict) -> Tuple[float, float]:
+    return float(s.get("gain_min_pct", 2.0)), float(s.get("assert_min_pct", 55.0))
+
+def get_coins(s: dict) -> List[str]:
+    return list(s.get("coins") or [])
+
+def _sym(par: str) -> str:
+    # Bybit USDT perp
+    return f"{par}USDT"
+
+# ---------- Exchange (Bybit) ----------
+def _http_get(url: str, params: dict, timeout=10) -> dict:
+    r = requests.get(url, params=params, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
 
 def _safe_mark(symbol: str) -> Tuple[float, str]:
-    # tenta BYBIT primeiro, depois BINANCE
-    for src in ("BYBIT", "BINANCE"):
-        try:
-            px = fetch_mark_price(symbol, source=src, timeout=5)
-            if px is not None and float(px) > 0:
-                return float(px), src
-        except Exception:
-            pass
-    return 0.0, "NONE"
-
-
-def _safe_klines(symbol: str, interval: str, limit: int = 220):
-    for src in ("BYBIT", "BINANCE"):
-        try:
-            kl = fetch_klines(symbol, interval=interval, limit=limit, source=src, timeout=10)
-            if kl and len(kl) >= 20:
-                return kl, src
-        except Exception:
-            pass
-    return None, "NONE"
-
-
-def _mk_item(
-    par: str,
-    side: str,
-    atual: float,
-    alvo: float,
-    ganho_pct: float,
-    assert_pct: float,
-    data: str,
-    hora: str,
-    prazo: str,
-    price_source: str,
-    ttl_expira_em: str,
-) -> Dict:
-    # GARANTIA: chaves sempre existem e números nunca são None
-    # ZONA/RISCO/PRIORIDADE foram removidos do JSON (regra nova)
-    return {
-        "par": par,
-        "side": side,
-        "atual": float(atual or 0.0),
-        "alvo": float(alvo or 0.0),
-        "ganho_pct": float(ganho_pct or 0.0),
-        "assert_pct": float(assert_pct or 0.0),
-        "data": data,
-        "hora": hora,
-        "prazo": prazo or "-",
-        "price_source": price_source or "NONE",
-        # Mantido por compatibilidade: agora sempre vazio
-        "nao_entrar_motivo": "",
-        "ttl_expira_em": ttl_expira_em,
-    }
-
-
-def _prazo_min(p: str) -> float:
-    # aceita "4.2h" ou "50m" (ou "-" / vazio)
     try:
-        s = (p or "").strip().lower()
-        if not s or s == "-":
-            return 1e9
-        if s.endswith("h"):
-            return float(s[:-1].strip()) * 60.0
-        if s.endswith("m"):
-            return float(s[:-1].strip())
+        js = _http_get(f"{BYBIT_BASE}/v5/market/tickers", {"category":"linear","symbol":symbol})
+        lst = (js.get("result") or {}).get("list") or []
+        if not lst:
+            return 0.0, "NONE"
+        p = float(lst[0].get("lastPrice") or 0.0)
+        return (p if p > 0 else 0.0), "BYBIT"
     except Exception:
-        pass
-    return 1e9
+        return 0.0, "NONE"
 
-
-def build_payload() -> Dict:
-    settings = load_settings()
-    gain_min, assert_min = get_thresholds(settings)  # mantidos no payload (info)
-    coins = get_coins(settings)
-
-    dt_brt, date_brt, time_brt = _now_brt()
-    ttl = _ttl_iso(6)
-
-    items: List[Dict] = []
-    miss_mark = 0
-    miss_kl = 0
-    
-    for par in coins:
-        symbol = _sym(par)
-
-        mark, mark_src = _safe_mark(symbol)
-        if mark <= 0:
-            miss_mark += 1
-
-        k1, _src1 = _safe_klines(symbol, "1h", 220)
-        k4, _src4 = _safe_klines(symbol, "4h", 220)
-        if not k1 or not k4:
-            miss_kl += 1
-
-        # FALLBACK: se mark vier 0/None, usa último close do 4h (senão 1h)
-        if (not mark) or float(mark) <= 0:
-            try:
-                if k4 and len(k4) >= 2:
-                    mark = float(k4[-1][3])
-                elif k1 and len(k1) >= 2:
-                    mark = float(k1[-1][3])
-            except Exception:
-                pass
-
-        # Sempre calcula (sem "NÃO ENTRAR"):
-        sig = build_signal(
-            par=par,
-            ohlc_1h=(k1 or []),
-            ohlc_4h=(k4 or []),
-            mark_price=float(mark or 0.0),
-            gain_min_pct=float(gain_min),
-            assert_min_pct=float(assert_min),
+def _safe_klines(symbol: str, interval: str, limit: int) -> Tuple[List[List[float]], str]:
+    """
+    Retorna lista de candles: [ts, open, high, low, close] como float
+    interval: "60" (1h) ou "240"(4h)
+    """
+    try:
+        js = _http_get(
+            f"{BYBIT_BASE}/v5/market/kline",
+            {"category":"linear","symbol":symbol,"interval":interval,"limit":str(limit)}
         )
+        rows = (js.get("result") or {}).get("list") or []
+        out = []
+        for it in reversed(rows):
+            # it: [startTime, open, high, low, close, volume, turnover]
+            out.append([float(it[0]), float(it[1]), float(it[2]), float(it[3]), float(it[4])])
+        return out, "BYBIT"
+    except Exception:
+        return [], "NONE"
 
-        # segurança: garantir side válido
-        side = sig.side if sig.side in ("LONG", "SHORT") else "LONG"
+# ---------- Signal Logic (simples e coerente p/ 1-2 dias) ----------
+@dataclass
+class Sig:
+    side: str
+    atual: float
+    alvo: float
+    ganho_pct: float
+    assert_pct: float
+    prazo: str
+    nao_entrar_motivo: str
 
-        items.append(
-            _mk_item(
-                par=par,
-                side=side,
-                atual=sig.atual,
-                alvo=sig.alvo,
-                ganho_pct=sig.ganho_pct,
-                assert_pct=sig.assert_pct,
-                data=date_brt,
-                hora=time_brt,
-                prazo=sig.prazo,
-                price_source=mark_src,
-                ttl_expira_em=ttl,
-            )
-        )
-    
-    # FULL ordenado por PAR (estável)
-    items.sort(key=lambda x: x.get("par") or "")
+def _trend_dir(closes: List[float]) -> int:
+    # dir: +1 alta, -1 baixa, 0 indefinido
+    if len(closes) < 30:
+        return 0
+    a = closes[-1]
+    b = closes[-25]
+    if b <= 0:
+        return 0
+    chg = (a - b) / b
+    if chg > 0.003:
+        return +1
+    if chg < -0.003:
+        return -1
+    return 0
 
-    payload = {
-        "ok": True,
-        "source": "local",
-        "updated_at": dt_brt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "now_brt": dt_brt.strftime("%Y-%m-%d %H:%M"),
-        "gain_min_pct": float(gain_min),
-        "assert_min_pct": float(assert_min),
-        "miss_mark": int(miss_mark),
-        "miss_klines": int(miss_kl),
-        "items": items,
-    }
+def build_signal(ohlc_1h: List[List[float]], ohlc_4h: List[List[float]], mark: float,
+                 gain_min_pct: float, assert_min_pct: float) -> Sig:
+    if mark <= 0:
+        return Sig("NÃO ENTRAR", 0.0, 0.0, 0.0, 0.0, "-", "SEM_PRECO_ATUAL")
 
-    return payload
+    c1 = [c[4] for c in ohlc_1h] if ohlc_1h else []
+    c4 = [c[4] for c in ohlc_4h] if ohlc_4h else []
 
+    if len(c1) < 30 or len(c4) < 30:
+        return Sig("NÃO ENTRAR", mark, mark, 0.0, 0.0, "-", "SEM_KLINES")
 
-def _clean_item(x: dict) -> dict:
-    # mantém só as colunas válidas do painel
-    keep = {
-        "par","side","atual","alvo","ganho_pct","assert_pct","prazo","data","hora",
-        "price_source","ttl_expira_em"
-    }
-    return {k: x.get(k) for k in keep if k in x}
+    d1 = _trend_dir(c1)   # 1h
+    d4 = _trend_dir(c4)   # 4h
 
-def _clean_payload(d: dict) -> dict:
-    d = dict(d)
-    items = list(d.get("items") or [])
-    d["items"] = [_clean_item(it) for it in items]
-    # remove campos mortos no topo do JSON (se existirem)
-    for k in ["zona","risco","prioridade","rank_pts","nao_entrar","não_entrar","naoEntrar"]:
-        if k in d: d.pop(k, None)
-    return d
+    if d1 == 0 or d4 == 0:
+        return Sig("NÃO ENTRAR", mark, mark, 0.0, 0.0, "-", "TENDENCIA_INDECISA")
 
+    if d1 != d4:
+        return Sig("NÃO ENTRAR", mark, mark, 0.0, 0.0, "-", "1H_X_4H_CONFLITO")
+
+    side = "LONG" if d1 > 0 else "SHORT"
+    alvo = mark * (1.0 + gain_min_pct/100.0) if side == "LONG" else mark * (1.0 - gain_min_pct/100.0)
+    if alvo <= 0:
+        return Sig("NÃO ENTRAR", mark, mark, 0.0, 0.0, "-", "ALVO_INVALIDO")
+
+    # ganho coerente com alvo
+    ganho = ((alvo - mark)/mark)*100.0 if side=="LONG" else ((mark - alvo)/mark)*100.0
+    if ganho < gain_min_pct * 0.95:
+        return Sig("NÃO ENTRAR", mark, mark, 0.0, 0.0, "-", "GANHO_BAIXO")
+
+    # assert simples: concordância 1h/4h => base 60; força do movimento ajusta
+    strength = abs((c1[-1]-c1[-25])/c1[-25]) * 100.0
+    assert_pct = min(85.0, max(55.0, 60.0 + strength*2.0))
+    if assert_pct < assert_min_pct:
+        return Sig("NÃO ENTRAR", mark, mark, 0.0, assert_pct, "-", "ASSERT_BAIXA")
+
+    prazo = "1-2d"
+    return Sig(side, mark, alvo, ganho, assert_pct, prazo, "")
+
+# ---------- JSON ----------
 def write_json(path: str, data: Dict):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
@@ -215,31 +162,76 @@ def write_json(path: str, data: Dict):
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, path)
 
-import time
+def _mk_item(par: str, sig: Sig, date_brt: str, time_brt: str, price_source: str, ttl: str) -> Dict:
+    return {
+        "par": par,
+        "side": sig.side,
+        "price_source": price_source or "NONE",
+        "atual": float(sig.atual or 0.0),
+        "alvo": float(sig.alvo or 0.0),
+        "ganho_pct": float(sig.ganho_pct or 0.0),
+        "assert_pct": float(sig.assert_pct or 0.0),
+        "prazo": sig.prazo or "-",
+        "data": date_brt,
+        "hora": time_brt,
+        "nao_entrar_motivo": (sig.nao_entrar_motivo or ""),
+        "ttl_expira_em": ttl
+    }
 
 def main():
     while True:
-        payload = build_payload()
-        payload = _clean_payload(payload)
-          write_json(os.path.join(DATA_DIR, "pro.json"), payload)
+        s = load_settings()
+        gain_min, assert_min = get_thresholds(s)
+        coins = get_coins(s)
 
-        # TOP10 (regra nova): ordenar por ASSERT desc -> GANHO desc -> PRAZO asc
-        ls = list(payload.get("items") or [])
-        ls = sorted(
-            ls,
-            key=lambda x: (
-                -float(x.get("assert_pct") or 0.0),
-                -float(x.get("ganho_pct") or 0.0),
-                str(x.get("par") or ""),
-            ),
-        )
+        dt_brt, date_brt, time_brt = _now_brt()
+        updated_at = _iso_utc_now()
+        ttl = _iso_utc_now()  # simples por enquanto (pode trocar depois)
 
-        top10 = dict(payload)
-        top10["items"] = ls[:10]
-        top10 = _clean_payload(top10)
-          write_json(os.path.join(DATA_DIR, "top10.json"), top10)
+        items = []
+        miss_mark = 0
+        miss_kl = 0
 
+        for par in coins:
+            symbol = _sym(par)
+            mark, src = _safe_mark(symbol)
+            if mark <= 0:
+                miss_mark += 1
+
+            k1, _ = _safe_klines(symbol, "60", 220)
+            k4, _ = _safe_klines(symbol, "240", 220)
+            if not k1 or not k4:
+                miss_kl += 1
+
+            sig = build_signal(k1, k4, float(mark or 0.0), gain_min, assert_min)
+            items.append(_mk_item(par, sig, date_brt, time_brt, src, ttl))
+
+        items.sort(key=lambda x: x.get("par") or "")
+
+        payload = {
+            "ok": True,
+            "source": "local",
+            "updated_at": updated_at,
+            "now_brt": dt_brt.strftime("%Y-%m-%d %H:%M"),
+            "gain_min_pct": gain_min,
+            "assert_min_pct": assert_min,
+            "miss_mark": int(miss_mark),
+            "miss_klines": int(miss_kl),
+            "items": items,
+        }
+
+        write_json(os.path.join(DATA_DIR, "pro.json"), payload)
+
+        # TOP10: só LONG/SHORT (NÃO ENTRAR não entra)
+        tradables = [x for x in items if x.get("side") in ("LONG","SHORT")]
+        top10 = sorted(tradables, key=lambda x: (-float(x.get("ganho_pct") or 0.0), -float(x.get("assert_pct") or 0.0)))[:10]
+        payload_top = dict(payload)
+        payload_top["items"] = top10
+        write_json(os.path.join(DATA_DIR, "top10.json"), payload_top)
+
+        print(f"[WORKER_PRO] OK | coins={len(coins)} miss_mark={miss_mark} miss_klines={miss_kl} | TOP10={len(top10)}")
         time.sleep(300)
 
 if __name__ == "__main__":
     main()
+PY
