@@ -75,6 +75,7 @@ def _mk_item(
     prazo: str,
     price_source: str,
     ttl_expira_em: str,
+    nao_entrar_motivo: str = "",
 ) -> Dict:
     # GARANTIA: chaves sempre existem e números nunca são None
     # ZONA/RISCO/PRIORIDADE foram removidos do JSON (regra nova)
@@ -154,8 +155,21 @@ def build_payload() -> Dict:
             assert_min_pct=float(assert_min),
         )
 
+        # segurança operacional (NÃO ENTRAR por instabilidade)
+        nao_motivo = ""
+        if (mark_src == "NONE") or (not mark) or (float(mark) <= 0):
+            side = "NÃO ENTRAR"
+            nao_motivo = "SEM_PRECO_ATUAL"
+        elif (not k1) or (not k4):
+            side = "NÃO ENTRAR"
+            nao_motivo = "SEM_KLINES"
+        elif sig.side in ("LONG","SHORT"):
+            side = sig.side
+        else:
+            side = "NÃO ENTRAR"
+            nao_motivo = "SINAL_INVALIDO"
+
         # segurança: garantir side válido
-        side = sig.side if sig.side in ("LONG", "SHORT") else "LONG"
 
         items.append(
             _mk_item(
@@ -170,6 +184,7 @@ def build_payload() -> Dict:
                 prazo=sig.prazo,
                 price_source=mark_src,
                 ttl_expira_em=ttl,
+                nao_entrar_motivo=nao_motivo,
             )
         )
     
@@ -221,23 +236,40 @@ def main():
     while True:
         payload = build_payload()
         payload = _clean_payload(payload)
-          write_json(os.path.join(DATA_DIR, "pro.json"), payload)
+        write_json(os.path.join(DATA_DIR, "pro.json"), payload)
 
-        # TOP10 (regra nova): ordenar por ASSERT desc -> GANHO desc -> PRAZO asc
+        # TOP10: apenas operações válidas (LONG/SHORT). NÃO ENTRAR não entra no TOP10.
         ls = list(payload.get("items") or [])
-        ls = sorted(
-            ls,
+        valid = [x for x in ls if (x.get("side") in ("LONG","SHORT"))]
+
+        # Ordenação TOP10: ASSERT desc -> GANHO desc -> PRAZO asc -> PAR asc
+        def _prazo_min_local(p):
+            try:
+                ss = (p or "").strip().lower()
+                if (not ss) or ss == "-":
+                    return 1e9
+                if ss.endswith("h"):
+                    return float(ss[:-1].strip()) * 60.0
+                if ss.endswith("m"):
+                    return float(ss[:-1].strip())
+            except Exception:
+                pass
+            return 1e9
+
+        valid = sorted(
+            valid,
             key=lambda x: (
                 -float(x.get("assert_pct") or 0.0),
                 -float(x.get("ganho_pct") or 0.0),
+                _prazo_min_local(x.get("prazo")),
                 str(x.get("par") or ""),
             ),
         )
 
         top10 = dict(payload)
-        top10["items"] = ls[:10]
+        top10["items"] = valid[:10]
         top10 = _clean_payload(top10)
-          write_json(os.path.join(DATA_DIR, "top10.json"), top10)
+        write_json(os.path.join(DATA_DIR, "top10.json"), top10)
 
         time.sleep(300)
 
