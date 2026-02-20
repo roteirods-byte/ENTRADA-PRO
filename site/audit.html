@@ -5,69 +5,89 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ENTRADA-PRO • Auditoria TOP10</title>
   <style>
-    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#071a2b;color:#fff}
+    :root{
+      --bg:#071a2b;
+      --panel:#0b2742;
+      --line:#123a5e;
+      --pumpkin:#ff8c00;
+      --good:#00ff7f;
+      --bad:#ff4d4d;
+      --btn:#1f78ff;
+      --muted: rgba(255,255,255,.82);
+    }
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:#fff}
     .wrap{max-width:1100px;margin:0 auto;padding:18px}
-    h1{margin:0 0 10px;color:#ff8c00;font-size:22px}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
-    .card{background:#0b2742;border:1px solid #123a5e;border-radius:10px;padding:12px;flex:1;min-width:260px}
-    .k{color:#ff8c00;font-weight:700;font-size:12px;letter-spacing:.5px}
-    .v{font-size:18px;margin-top:4px}
-    table{width:100%;border-collapse:collapse;margin-top:10px}
-    th,td{border-bottom:1px solid #123a5e;padding:8px;text-align:left;font-size:13px}
-    th{color:#ff8c00}
-    .muted{opacity:.85}
-    .good{color:#00ff7f}
-    .bad{color:#ff4d4d}
-
-    /* botões */
-    .btn{display:inline-block;background:#1f78ff;color:#fff;padding:8px 10px;border-radius:8px;text-decoration:none;font-weight:800}
-    .btn-pumpkin{background:#ff8c00;color:#071a2b;border:1px solid #ff8c00}
-    .btn-pumpkin:hover{filter:brightness(1.06)}
+    h1{margin:0;color:var(--pumpkin);font-size:22px}
     .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;flex:1;min-width:260px}
+    .k{color:var(--pumpkin);font-weight:800;font-size:12px;letter-spacing:.5px}
+    .v{font-size:20px;margin-top:6px;font-weight:900}
+    .muted{color:var(--muted);font-size:13px;margin-top:6px}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;font-size:13px;white-space:nowrap}
+    th{color:var(--pumpkin)}
+    .good{color:var(--good);font-weight:900}
+    .bad{color:var(--bad);font-weight:900}
+    .btn{display:inline-block;background:var(--btn);color:#fff;padding:8px 12px;border-radius:10px;text-decoration:none;font-weight:900}
+    .note{margin-top:10px;color:var(--muted);font-size:13px;line-height:1.35}
+    details{margin-top:10px}
+    summary{cursor:pointer;color:#fff;font-weight:900}
+    .tag{display:inline-block;border:1px solid var(--line);padding:2px 8px;border-radius:999px;margin-left:8px;font-size:12px;color:var(--muted)}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="top">
-      <h1>Auditoria TOP10</h1>
-      <!-- só TOP10 (abóbora). removido FULL -->
-      <a class="btn btn-pumpkin" href="top10.html">VOLTAR TOP10</a>
+      <h1>PAINEL AUDITORIA (TOP10)</h1>
+      <a class="btn" href="./top10.html">VOLTAR TOP10</a>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="muted">
+        Atualizado (BRT): <b id="updated">--</b>
+        <span class="tag">Atualiza tela a cada 60s</span>
+      </div>
+      <div class="note">
+        Objetivo: mostrar <b>onde o TOP10 está performando melhor</b> (por <b>dia</b>, <b>hora</b> e <b>dia+hora</b>).
+        Use isso para entender quais janelas estão mais favoráveis.
+      </div>
     </div>
 
     <div class="row">
       <div class="card">
-        <div class="k">ATUALIZADO (BRT)</div>
-        <div class="v" id="updated">--</div>
-        <div class="muted" style="margin-top:6px">Endpoint: <span id="ep"></span></div>
-      </div>
-      <div class="card">
-        <div class="k">ABERTAS AGORA</div>
-        <div class="v" id="open_count">--</div>
-      </div>
-      <div class="card">
-        <div class="k">TOTAL FECHADAS</div>
+        <div class="k">TOTAL (FECHADAS)</div>
         <div class="v" id="total">--</div>
+        <div class="muted">Base da estatística</div>
       </div>
+
       <div class="card">
         <div class="k">PNL MÉDIO (%)</div>
         <div class="v" id="pnl_avg">--</div>
+        <div class="muted">Média do resultado real (pnl_pct_real)</div>
+      </div>
+
+      <div class="card">
+        <div class="k">ABERTAS AGORA</div>
+        <div class="v" id="open_count">--</div>
+        <div class="muted">Quantidade em monitoramento</div>
       </div>
     </div>
 
-    <div class="row" style="margin-top:12px">
+    <div class="row">
       <div class="card">
         <div class="k">TOP 5 MELHORES JANELAS (DIA + HORA)</div>
         <table>
-          <thead><tr><th>Dia</th><th>Hora</th><th>Amostra</th><th>PNL médio %</th></tr></thead>
+          <thead>
+            <tr><th>Dia</th><th>Hora</th><th>Amostra</th><th>PNL médio %</th></tr>
+          </thead>
           <tbody id="best"></tbody>
         </table>
-        <div class="muted" style="margin-top:8px">
-          Regra simples: quanto maior a amostra e o PNL médio, melhor.
-        </div>
+        <div class="note">Regra simples: quanto maior a <b>Amostra</b> e o <b>PNL médio</b>, melhor.</div>
       </div>
     </div>
 
-    <div class="row" style="margin-top:12px">
+    <div class="row">
       <div class="card">
         <div class="k">MELHORES DIAS (DIA DA SEMANA)</div>
         <table>
@@ -77,77 +97,119 @@
       </div>
 
       <div class="card">
-        <div class="k">MELHORES HORAS (BRT)</div>
+        <div class="k">MELHORES HORÁRIOS (HORA BRT)</div>
         <table>
           <thead><tr><th>Hora</th><th>Amostra</th><th>PNL médio %</th></tr></thead>
           <tbody id="by_hour"></tbody>
         </table>
       </div>
     </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="k">DETALHES (OPCIONAL)</div>
+      <details>
+        <summary>Ver últimos fechados (caso a caso)</summary>
+        <table>
+          <thead>
+            <tr>
+              <th>PAR</th><th>SIDE</th><th>RESULT</th><th>HIT</th><th>PNL %</th><th>ABRIU</th><th>FECHOU</th>
+            </tr>
+          </thead>
+          <tbody id="last_closed"></tbody>
+        </table>
+        <div class="note">Use isso só quando precisar investigar um caso específico.</div>
+      </details>
+    </div>
   </div>
 
 <script>
   const endpoint = "/api/audit/summary";
-  document.getElementById("ep").textContent = endpoint;
 
-  function fmt(n){
+  function fmt3(n){
     if (n === null || n === undefined || isNaN(n)) return "--";
-    return Number(n).toFixed(2);
+    return Number(n).toFixed(3);
   }
   function clsPNL(x){
     const v = Number(x);
     if (isNaN(v)) return "";
     return v >= 0 ? "good" : "bad";
   }
+  function safe(v, fallback="--"){
+    return (v === null || v === undefined || v === "") ? fallback : String(v);
+  }
 
   async function load(){
-    const r = await fetch(endpoint + "?t=" + Date.now(), {cache:"no-store"});
-    const j = await r.json();
+    let j;
+    try{
+      const r = await fetch(endpoint + "?t=" + Date.now(), {cache:"no-store"});
+      j = await r.json();
+    }catch(e){
+      document.getElementById("updated").textContent = "ERRO (API)";
+      return;
+    }
 
-    document.getElementById("updated").textContent = j.updated_at_brt || "--";
-    document.getElementById("open_count").textContent = (j.open_count ?? "--");
+    document.getElementById("updated").textContent = safe(j.updated_at_brt);
+    document.getElementById("open_count").textContent = safe(j.open_count);
 
     const overall = j.overall || {};
-    document.getElementById("total").textContent = (overall.total ?? "--");
+    document.getElementById("total").textContent = safe(overall.total);
     document.getElementById("pnl_avg").innerHTML =
-      `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt(overall.pnl_avg_pct)}</span>`;
+      `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
 
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
-    document.getElementById("best").innerHTML = best.map(x => `
-      <tr>
-        <td>${x.dow || "-"}</td>
-        <td>${(x.hour || "-")}:00</td>
-        <td>${x.n ?? "-"}</td>
-        <td class="${clsPNL(x.pnl_avg_pct)}">${fmt(x.pnl_avg_pct)}</td>
-      </tr>
-    `).join("") || `<tr><td colspan="4" class="muted">Sem dados suficientes ainda.</td></tr>`;
+    document.getElementById("best").innerHTML =
+      (best.length ? best.map(x => `
+        <tr>
+          <td>${safe(x.dow, "-")}</td>
+          <td>${safe(x.hour, "-")}:00</td>
+          <td>${safe(x.n, "-")}</td>
+          <td class="${clsPNL(x.pnl_avg_pct)}">${fmt3(x.pnl_avg_pct)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="4" class="muted">Sem dados suficientes ainda.</td></tr>`);
 
     // by_dow
     const by_dow = j.by_dow || {};
     const dowKeys = Object.keys(by_dow);
-    document.getElementById("by_dow").innerHTML = dowKeys.map(k => `
-      <tr>
-        <td>${k}</td>
-        <td>${by_dow[k].n ?? "-"}</td>
-        <td class="${clsPNL(by_dow[k].pnl_avg_pct)}">${fmt(by_dow[k].pnl_avg_pct)}</td>
-      </tr>
-    `).join("") || `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`;
+    document.getElementById("by_dow").innerHTML =
+      (dowKeys.length ? dowKeys.map(k => `
+        <tr>
+          <td>${k}</td>
+          <td>${safe(by_dow[k].n, "-")}</td>
+          <td class="${clsPNL(by_dow[k].pnl_avg_pct)}">${fmt3(by_dow[k].pnl_avg_pct)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`);
 
     // by_hour
     const by_hour = j.by_hour || {};
     const hourKeys = Object.keys(by_hour).sort();
-    document.getElementById("by_hour").innerHTML = hourKeys.map(k => `
-      <tr>
-        <td>${k}:00</td>
-        <td>${by_hour[k].n ?? "-"}</td>
-        <td class="${clsPNL(by_hour[k].pnl_avg_pct)}">${fmt(by_hour[k].pnl_avg_pct)}</td>
-      </tr>
-    `).join("") || `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`;
+    document.getElementById("by_hour").innerHTML =
+      (hourKeys.length ? hourKeys.map(k => `
+        <tr>
+          <td>${k}:00</td>
+          <td>${safe(by_hour[k].n, "-")}</td>
+          <td class="${clsPNL(by_hour[k].pnl_avg_pct)}">${fmt3(by_hour[k].pnl_avg_pct)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`);
+
+    // last_closed
+    const lc = Array.isArray(j.last_closed) ? j.last_closed : [];
+    document.getElementById("last_closed").innerHTML =
+      (lc.length ? lc.map(x => `
+        <tr>
+          <td>${safe(x.par,"-")}</td>
+          <td>${safe(x.side,"-")}</td>
+          <td>${safe(x.result,"-")}</td>
+          <td>${safe(x.hit,"-")}</td>
+          <td class="${clsPNL(x.pnl_pct_real)}">${fmt3(x.pnl_pct_real)}</td>
+          <td>${safe(x.ts_brt,"-")}</td>
+          <td>${safe(x.close_ts_brt,"-")}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="7" class="muted">Sem fechamentos recentes.</td></tr>`);
   }
 
   load();
-  setInterval(load, 60_000);
+  setInterval(load, 60_000); // só a tela atualiza (não pesa)
 </script>
 </body>
 </html>
