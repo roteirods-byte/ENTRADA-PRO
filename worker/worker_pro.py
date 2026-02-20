@@ -77,6 +77,13 @@ def _mk_item(
     ttl_expira_em: str,
     nao_entrar_motivo: str = "",
 ) -> Dict:
+    # REGRA FORÇADA: NÃO ENTRAR => não exibir números no FULL
+    if side == "NÃO ENTRAR":
+        atual = 0.0
+        alvo = 0.0
+        ganho_pct = 0.0
+        assert_pct = 0.0
+        prazo = "-"
     # GARANTIA: chaves sempre existem e números nunca são None
     # ZONA/RISCO/PRIORIDADE foram removidos do JSON (regra nova)
     return {
@@ -169,23 +176,34 @@ def build_payload() -> Dict:
             side = "NÃO ENTRAR"
             nao_motivo = "SINAL_INVALIDO"
 
-        # segurança: garantir side válido
+        # SAÍDA FINAL (não depende de mutar sig)
+        if side == "NÃO ENTRAR":
+            out_atual = 0.0
+            out_alvo = 0.0
+            out_ganho = 0.0
+            out_assert = 0.0
+            out_prazo = "-"
+        else:
+            out_atual = sig.atual
+            out_alvo = sig.alvo
+            out_ganho = sig.ganho_pct
+            out_assert = sig.assert_pct
+            out_prazo = sig.prazo
 
         items.append(
             _mk_item(
                 par=par,
                 side=side,
-                atual=sig.atual,
-                alvo=sig.alvo,
-                ganho_pct=sig.ganho_pct,
-                assert_pct=sig.assert_pct,
+                atual=out_atual,
+                alvo=out_alvo,
+                ganho_pct=out_ganho,
+                assert_pct=out_assert,
                 data=date_brt,
                 hora=time_brt,
-                prazo=sig.prazo,
+                prazo=out_prazo,
                 price_source=mark_src,
                 ttl_expira_em=ttl,
-                nao_entrar_motivo=nao_motivo,
-            )
+                    )
         )
     
     # FULL ordenado por PAR (estável)
