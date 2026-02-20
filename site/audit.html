@@ -18,7 +18,11 @@
     .muted{opacity:.85}
     .good{color:#00ff7f}
     .bad{color:#ff4d4d}
-    .btn{display:inline-block;background:#1f78ff;color:#fff;padding:8px 10px;border-radius:8px;text-decoration:none;font-weight:700}
+
+    /* botões */
+    .btn{display:inline-block;background:#1f78ff;color:#fff;padding:8px 10px;border-radius:8px;text-decoration:none;font-weight:800}
+    .btn-pumpkin{background:#ff8c00;color:#071a2b;border:1px solid #ff8c00}
+    .btn-pumpkin:hover{filter:brightness(1.06)}
     .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
   </style>
 </head>
@@ -26,7 +30,8 @@
   <div class="wrap">
     <div class="top">
       <h1>Auditoria TOP10</h1>
-      <a class="btn" href="top10.html">Voltar TOP10</a>
+      <!-- só TOP10 (abóbora). removido FULL -->
+      <a class="btn btn-pumpkin" href="top10.html">VOLTAR TOP10</a>
     </div>
 
     <div class="row">
@@ -51,30 +56,30 @@
 
     <div class="row" style="margin-top:12px">
       <div class="card">
-        <div class="k">MELHORES JANELAS (DIA + HORA)</div>
+        <div class="k">TOP 5 MELHORES JANELAS (DIA + HORA)</div>
         <table>
-          <thead><tr><th>Dia</th><th>Hora</th><th>N</th><th>PNL médio %</th></tr></thead>
+          <thead><tr><th>Dia</th><th>Hora</th><th>Amostra</th><th>PNL médio %</th></tr></thead>
           <tbody id="best"></tbody>
         </table>
         <div class="muted" style="margin-top:8px">
-          * Quanto maior o N, mais confiável. (no começo pode oscilar)
+          Regra simples: quanto maior a amostra e o PNL médio, melhor.
         </div>
       </div>
     </div>
 
     <div class="row" style="margin-top:12px">
       <div class="card">
-        <div class="k">POR DIA DA SEMANA</div>
+        <div class="k">MELHORES DIAS (DIA DA SEMANA)</div>
         <table>
-          <thead><tr><th>Dia</th><th>N</th><th>PNL médio %</th></tr></thead>
+          <thead><tr><th>Dia</th><th>Amostra</th><th>PNL médio %</th></tr></thead>
           <tbody id="by_dow"></tbody>
         </table>
       </div>
 
       <div class="card">
-        <div class="k">POR HORA (BRT)</div>
+        <div class="k">MELHORES HORAS (BRT)</div>
         <table>
-          <thead><tr><th>Hora</th><th>N</th><th>PNL médio %</th></tr></thead>
+          <thead><tr><th>Hora</th><th>Amostra</th><th>PNL médio %</th></tr></thead>
           <tbody id="by_hour"></tbody>
         </table>
       </div>
@@ -87,8 +92,7 @@
 
   function fmt(n){
     if (n === null || n === undefined || isNaN(n)) return "--";
-    const x = Number(n);
-    return x.toFixed(3);
+    return Number(n).toFixed(2);
   }
   function clsPNL(x){
     const v = Number(x);
@@ -113,7 +117,7 @@
     document.getElementById("best").innerHTML = best.map(x => `
       <tr>
         <td>${x.dow || "-"}</td>
-        <td>${x.hour || "-"}</td>
+        <td>${(x.hour || "-")}:00</td>
         <td>${x.n ?? "-"}</td>
         <td class="${clsPNL(x.pnl_avg_pct)}">${fmt(x.pnl_avg_pct)}</td>
       </tr>
@@ -143,7 +147,7 @@
   }
 
   load();
-  setInterval(load, 60_000); // atualiza a tela a cada 1 min (sem pesar)
+  setInterval(load, 60_000);
 </script>
 </body>
 </html>
