@@ -1,105 +1,30 @@
-/* ENTRADA-PRO API (Node)
-   - Serve /api/pro e /api/top10
-   - BLOCO 2 (blindado): NÃO CALCULA NADA. SÓ LÊ ARQUIVO.
-*/
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
-
-const fs = require('fs/promises');
-const express = require('express');
+cat > /opt/ENTRADA-PRO/api/server.js <<'JS'
+const fs = require("fs");
+const path = require("path");
+const express = require("express");
 
 const app = express();
-app.disable('x-powered-by');
+const DATA_DIR = process.env.DATA_DIR || "/opt/ENTRADA-PRO/data";
 
-// ====== CONFIG ======
-const SERVICE = 'entrada-pro-api';
-const PORT = Number(process.env.PORT || 8080);
-
-// Por padrão, usa ../data (repo/data). Em produção, configure DATA_DIR.
-const DATA_DIR = (process.env.DATA_DIR && process.env.DATA_DIR.trim())
-  ? process.env.DATA_DIR.trim()
-  : path.join(__dirname, '..', 'data');
-
-// ====== HELPERS ======
-function nowUtc() {
-  return new Date().toISOString();
-}
-
-// Sem cache (browser/proxy/CDN)
-function noStore(res) {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.setHeader('Surrogate-Control', 'no-store');
-}
-
-// CORS simples (painel pode estar em outro host)
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
-
-async function readJsonFile(filename) {
-  const full = path.join(DATA_DIR, filename);
-  const raw = await fs.readFile(full, 'utf8');
+function readJson(file) {
+  const p = path.join(DATA_DIR, file);
+  if (!fs.existsSync(p)) return { ok:false, error:"FILE_NOT_FOUND", file };
+  const raw = fs.readFileSync(p, "utf8");
   return JSON.parse(raw);
 }
 
-async function sendJsonFromFile(res, filename) {
-  try {
-    const json = await readJsonFile(filename);
-    noStore(res);
-    return res.status(200).json(json); // JSON "puro" do data/
-  } catch (e) {
-    const msg = (e && e.message) ? e.message : String(e);
-    return res.status(500).json({
-      ok: false,
-      service: SERVICE,
-      now_utc: nowUtc(),
-      file: filename,
-      error: msg,
-    });
-  }
-}
-
-// ====== ROUTES ======
-app.get(['/health', '/api/health'], (req, res) => res.status(200).json({ ok: true }));
-
-app.get('/', (req, res) => {
-  res.status(200).send(
-    `OK: ${SERVICE}\n` +
-    `GET /api/version OR GET /version\n` +
-    `GET /api/pro OR GET /pro\n` +
-    `GET /api/top10 OR GET /top10\n` +
-    `GET /api/audit/summary OR GET /audit/summary\n` +
-    `GET /api/health OR GET /health\n`
-  );
+app.get("/api/pro", (req,res)=> {
+  try { return res.json(readJson("pro.json")); }
+  catch(e){ return res.status(500).json({ok:false,error:"READ_FAIL",msg:String(e)}); }
 });
 
-function versionPayload() {
-  return {
-    ok: true,
-    service: SERVICE,
-    version: process.env.APP_VERSION || 'unknown',
-    now_utc: nowUtc(),
-  };
-}
-
-app.get(['/api/version', '/version'], (req, res) => res.status(200).json(versionPayload()));
-
-app.get(['/api/pro', '/pro'], async (req, res) => sendJsonFromFile(res, 'pro.json'));
-app.get(['/api/top10', '/top10'], async (req, res) => sendJsonFromFile(res, 'top10.json'));
-
-// AUDITORIA TOP10 (BLOCO AUDITORIA) - só lê arquivo gerado em data/audit/
-app.get(['/api/audit/summary', '/audit/summary'], async (req, res) =>
-  sendJsonFromFile(res, path.join('audit', 'top10_summary.json'))
-);
-
-// ====== START ======
-app.listen(PORT, () => {
-  console.log(`[${SERVICE}] listening on ${PORT} | now=${nowUtc()}`);
-  console.log(`[${SERVICE}] DATA_DIR=${DATA_DIR}`);
+app.get("/api/top10", (req,res)=> {
+  try { return res.json(readJson("top10.json")); }
+  catch(e){ return res.status(500).json({ok:false,error:"READ_FAIL",msg:String(e)}); }
 });
+
+app.get("/api/health", (req,res)=> res.json({ok:true, service:"entrada-pro-api"}));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, ()=> console.log(`[API] listening ${PORT} DATA_DIR=${DATA_DIR}`));
+JS
