@@ -80,6 +80,7 @@ def log_signals(items: Iterable[Dict[str, Any]], *, updated_at: str, gain_min_pc
                 "ganho_pct": ganho,
                 "assert_pct": float(it.get("assert_pct") or 0.0),
                 "prazo": it.get("prazo") or "",
+                  "ttl_h": it.get("prazo") or "",
                 "zona": it.get("zona") or "",
                 "risco": it.get("risco") or "",
                 "prioridade": it.get("prioridade") or "",
