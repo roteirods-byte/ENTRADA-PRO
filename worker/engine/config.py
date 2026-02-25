@@ -65,3 +65,18 @@ def get_coins(settings: dict) -> List[str]:
         return lst
 
     return DEFAULT_COINS
+
+# --- BLOCO4 (AUDITORIA) compat ---
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+# diretório base de dados (padrão do deploy)
+DATA_DIR = os.getenv("DATA_DIR", "/opt/ENTRADA-PRO/data")
+
+# mínimo de ganho usado na auditoria (padrão 2%)
+GAIN_MIN_PCT = float(os.getenv("GAIN_MIN_PCT", str(DEFAULT_GAIN_MIN_PCT)))
+
+def now_brt_str() -> str:
+    """Retorna agora em BRT no formato YYYY-MM-DD HH:MM"""
+    tz = ZoneInfo("America/Sao_Paulo")
+    return datetime.now(tz).strftime("%Y-%m-%d %H:%M")

@@ -96,6 +96,7 @@ def _mk_item(
         "data": data,
         "hora": hora,
         "prazo": prazo or "-",
+        "ttl_h": prazo or "-",
         "price_source": price_source or "NONE",
         # Mantido por compatibilidade: agora sempre vazio
         "nao_entrar_motivo": "",
@@ -228,7 +229,7 @@ def _clean_item(x: dict) -> dict:
     # mantém só as colunas válidas do painel
     keep = {
         "par","side","atual","alvo","ganho_pct","assert_pct","prazo","data","hora",
-        "price_source","ttl_expira_em"
+        "price_source","ttl_expira_em","ttl_h"
     }
     return {k: x.get(k) for k in keep if k in x}
 
