@@ -287,21 +287,20 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
         nums = [float(x) for x in nums if x is not None]
         return sum(nums) / len(nums) if nums else 0.0
 
-    pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
+        pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
 
-ttl_pos = 0
-    ttl_neg = 0
-    ttl_zero = 0
-    for _x in last_closed:
-        if str(_x.get("result")) == "EXPIRED":
-            _v = float(_x.get("pnl_pct_real") or 0.0)
-            if _v > 0:
+    # TTL (EXPIRED) por sinal do PNL
+    ttl_pos = ttl_neg = ttl_zero = 0
+    for x in last_closed:
+        if str(x.get("result")) == "EXPIRED" and str(x.get("hit")) == "TTL":
+            v = float(x.get("pnl_pct_real") or 0.0)
+            if v > 0:
                 ttl_pos += 1
-            elif _v < 0:
+            elif v < 0:
                 ttl_neg += 1
             else:
                 ttl_zero += 1
-  
+
     overall = {
         "total": int(total),
         "win": int(win),
@@ -309,12 +308,14 @@ ttl_pos = 0
         "expired": int(expired),
         "win_rate_pct": float(win_rate),
         "pnl_avg_pct": float(_avg(pnl_list)) if pnl_list else 0.0,
-      "ttl_pos": int(ttl_pos),
+
+        # novos contadores (TTL)
+        "ttl_pos": int(ttl_pos),
         "ttl_neg": int(ttl_neg),
         "ttl_zero": int(ttl_zero),
     }
-
-    by_dow: Dict[str, Dict[str, Any]] = {}
+    
+  by_dow: Dict[str, Dict[str, Any]] = {}
     by_hour: Dict[str, Dict[str, Any]] = {}
     combo: Dict[str, Dict[str, Any]] = {}
 
