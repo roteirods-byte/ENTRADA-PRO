@@ -277,29 +277,56 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
     # grava open
     atomic_write_json(open_path, new_open)
 
-    # ---------- RESUMO ----------
+      # ---------- RESUMO ----------
+    # Lê o histórico real (jsonl) para não zerar quando este ciclo não fechou nada.
+    def _read_last_closed_jsonl(path: Path, limit: int) -> List[Dict[str, Any]]:
+        try:
+            if not path.exists():
+                return []
+            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = lines[-limit:] if limit > 0 else lines
+            out: List[Dict[str, Any]] = []
+            for ln in lines:
+                ln = (ln or "").strip()
+                if not ln:
+                    continue
+                try:
+                    out.append(json.loads(ln))
+                except Exception:
+                    continue
+            return out
+        except Exception:
+            return []
+
+    last_closed = _read_last_closed_jsonl(closed_path, max_last_closed)
+
+    # Contagem por resultado (histórico)
+    win = sum(1 for x in last_closed if str(x.get("result")) == "WIN")
+    loss = sum(1 for x in last_closed if str(x.get("result")) == "LOSS")
+    expired = sum(1 for x in last_closed if str(x.get("result")) == "EXPIRED")
     total = win + loss + expired
     win_rate = (win / total * 100.0) if total > 0 else 0.0
-
-    last_closed = closed_cycle[-max_last_closed:]
 
     def _avg(nums: List[float]) -> float:
         nums = [float(x) for x in nums if x is not None]
         return sum(nums) / len(nums) if nums else 0.0
 
-        pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
+    pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
 
-    # TTL (EXPIRED) por sinal do PNL
+    # TTL counters (somente EXPIRED por TTL)
     ttl_pos = ttl_neg = ttl_zero = 0
     for x in last_closed:
-        if str(x.get("result")) == "EXPIRED" and str(x.get("hit")) == "TTL":
-            v = float(x.get("pnl_pct_real") or 0.0)
-            if v > 0:
-                ttl_pos += 1
-            elif v < 0:
-                ttl_neg += 1
-            else:
-                ttl_zero += 1
+        if str(x.get("result")) != "EXPIRED":
+            continue
+        if str(x.get("hit")) != "TTL":
+            continue
+        pnl = float(x.get("pnl_pct_real") or 0.0)
+        if pnl > 0:
+            ttl_pos += 1
+        elif pnl < 0:
+            ttl_neg += 1
+        else:
+            ttl_zero += 1
 
     overall = {
         "total": int(total),
@@ -308,14 +335,12 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
         "expired": int(expired),
         "win_rate_pct": float(win_rate),
         "pnl_avg_pct": float(_avg(pnl_list)) if pnl_list else 0.0,
-
-        # novos contadores (TTL)
         "ttl_pos": int(ttl_pos),
         "ttl_neg": int(ttl_neg),
         "ttl_zero": int(ttl_zero),
-    }
-    
-  by_dow: Dict[str, Dict[str, Any]] = {}
+    } 
+
+      by_dow: Dict[str, Dict[str, Any]] = {}
     by_hour: Dict[str, Dict[str, Any]] = {}
     combo: Dict[str, Dict[str, Any]] = {}
 
