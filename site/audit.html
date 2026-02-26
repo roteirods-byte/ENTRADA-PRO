@@ -74,6 +74,27 @@
       </div>
     </div>
 
+    <!-- ✅ NOVOS CARDS: TTL POS / TTL NEG / TTL ZERO -->
+    <div class="row">
+      <div class="card">
+        <div class="k">TTL POS (EXPIRED com PNL &gt; 0)</div>
+        <div class="v good" id="ttl_pos">--</div>
+        <div class="muted">TTL fechado no lucro</div>
+      </div>
+
+      <div class="card">
+        <div class="k">TTL NEG (EXPIRED com PNL &lt; 0)</div>
+        <div class="v bad" id="ttl_neg">--</div>
+        <div class="muted">TTL fechado no prejuízo</div>
+      </div>
+
+      <div class="card">
+        <div class="k">TTL ZERO (EXPIRED com PNL = 0)</div>
+        <div class="v" id="ttl_zero">--</div>
+        <div class="muted">TTL fechou zerado</div>
+      </div>
+    </div>
+
     <div class="row">
       <div class="card">
         <div class="k">TOP 5 MELHORES JANELAS (DIA + HORA)</div>
@@ -155,6 +176,11 @@
     document.getElementById("total").textContent = safe(overall.total);
     document.getElementById("pnl_avg").innerHTML =
       `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
+
+    // ✅ NOVO: TTL counters (se vier null, vai aparecer "--")
+    document.getElementById("ttl_pos").textContent = safe(overall.ttl_pos);
+    document.getElementById("ttl_neg").textContent = safe(overall.ttl_neg);
+    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero);
 
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
