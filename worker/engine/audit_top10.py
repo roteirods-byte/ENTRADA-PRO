@@ -277,22 +277,93 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
     # grava open
     atomic_write_json(open_path, new_open)
 
-    # ---------- RESUMO ----------
+        # ---------- RESUMO ----------
     total = win + loss + expired
     win_rate = (win / total * 100.0) if total > 0 else 0.0
 
     last_closed = closed_cycle[-max_last_closed:]
 
+    def _avg(nums: List[float]) -> float:
+        nums = [float(x) for x in nums if x is not None]
+        return sum(nums) / len(nums) if nums else 0.0
+
+    pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
+    overall = {
+        "total": int(total),
+        "win": int(win),
+        "loss": int(loss),
+        "expired": int(expired),
+        "win_rate_pct": float(win_rate),
+        "pnl_avg_pct": float(_avg(pnl_list)) if pnl_list else 0.0,
+    }
+
+    by_dow: Dict[str, Dict[str, Any]] = {}
+    by_hour: Dict[str, Dict[str, Any]] = {}
+    combo: Dict[str, Dict[str, Any]] = {}
+
+    dow_map = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+
+    for x in last_closed:
+        ts = str(x.get("ts_brt") or "")
+        dow = "-"
+        hour = "-"
+        try:
+            dt = datetime.strptime(ts, "%Y-%m-%d %H:%M").replace(tzinfo=TZ_BRT)
+            dow = dow_map[dt.weekday()]
+            hour = f"{dt.hour:02d}"
+        except Exception:
+            pass
+
+        pnl = float(x.get("pnl_pct_real") or 0.0)
+
+        by_dow.setdefault(dow, {"n": 0, "pnl_sum": 0.0})
+        by_dow[dow]["n"] += 1
+        by_dow[dow]["pnl_sum"] += pnl
+
+        by_hour.setdefault(hour, {"n": 0, "pnl_sum": 0.0})
+        by_hour[hour]["n"] += 1
+        by_hour[hour]["pnl_sum"] += pnl
+
+        key = f"{dow}|{hour}"
+        combo.setdefault(key, {"dow": dow, "hour": hour, "n": 0, "pnl_sum": 0.0})
+        combo[key]["n"] += 1
+        combo[key]["pnl_sum"] += pnl
+
+    by_dow_out = {k: {"n": v["n"], "pnl_avg_pct": (v["pnl_sum"]/v["n"]) if v["n"] else 0.0} for k, v in by_dow.items()}
+    by_hour_out = {k: {"n": v["n"], "pnl_avg_pct": (v["pnl_sum"]/v["n"]) if v["n"] else 0.0} for k, v in by_hour.items()}
+
+    best_windows = sorted(
+        [
+            {
+                "dow": v["dow"],
+                "hour": v["hour"],
+                "n": v["n"],
+                "pnl_avg_pct": (v["pnl_sum"]/v["n"]) if v["n"] else 0.0,
+            }
+            for v in combo.values()
+        ],
+        key=lambda r: (r["pnl_avg_pct"], r["n"]),
+        reverse=True
+    )[:8]
+
     summary = {
         "ok": True,
         "updated_at_brt": _now_brt().strftime("%Y-%m-%d %H:%M"),
         "open_count": len(new_open),
+
+        # schema esperado pelo audit.html
+        "overall": overall,
+        "by_dow": by_dow_out,
+        "by_hour": by_hour_out,
+        "best_windows": best_windows,
+
+        # mantém compatibilidade
         "closed_cycle": {
-            "total": total,
-            "win": win,
-            "loss": loss,
-            "expired": expired,
-            "win_rate_pct": win_rate,
+            "total": int(total),
+            "win": int(win),
+            "loss": int(loss),
+            "expired": int(expired),
+            "win_rate_pct": float(win_rate),
         },
         "last_closed": [
             {
