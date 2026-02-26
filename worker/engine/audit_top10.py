@@ -277,7 +277,7 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
     # grava open
     atomic_write_json(open_path, new_open)
 
-        # ---------- RESUMO ----------
+    # ---------- RESUMO ----------
     total = win + loss + expired
     win_rate = (win / total * 100.0) if total > 0 else 0.0
 
@@ -288,6 +288,20 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
         return sum(nums) / len(nums) if nums else 0.0
 
     pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
+
+ttl_pos = 0
+    ttl_neg = 0
+    ttl_zero = 0
+    for _x in last_closed:
+        if str(_x.get("result")) == "EXPIRED":
+            _v = float(_x.get("pnl_pct_real") or 0.0)
+            if _v > 0:
+                ttl_pos += 1
+            elif _v < 0:
+                ttl_neg += 1
+            else:
+                ttl_zero += 1
+  
     overall = {
         "total": int(total),
         "win": int(win),
@@ -295,6 +309,9 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
         "expired": int(expired),
         "win_rate_pct": float(win_rate),
         "pnl_avg_pct": float(_avg(pnl_list)) if pnl_list else 0.0,
+      "ttl_pos": int(ttl_pos),
+        "ttl_neg": int(ttl_neg),
+        "ttl_zero": int(ttl_zero),
     }
 
     by_dow: Dict[str, Dict[str, Any]] = {}
