@@ -311,34 +311,36 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
         nums = [float(x) for x in nums if x is not None]
         return sum(nums) / len(nums) if nums else 0.0
 
-    pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
+pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
 
-    # TTL counters (somente EXPIRED por TTL)
-    ttl_pos = ttl_neg = ttl_zero = 0
-    for x in last_closed:
-        if str(x.get("result")) != "EXPIRED":
-            continue
-        if str(x.get("hit")) != "TTL":
-            continue
-        pnl = float(x.get("pnl_pct_real") or 0.0)
-        if pnl > 0:
-            ttl_pos += 1
-        elif pnl < 0:
-            ttl_neg += 1
-        else:
-            ttl_zero += 1
+# contadores de EXPIRED por TTL (lucro / prejuízo / zero)
+ttl_pos = ttl_neg = ttl_zero = 0
+for x in last_closed:
+    try:
+        if str(x.get("result")) == "EXPIRED" and str(x.get("hit")) == "TTL":
+            p = float(x.get("pnl_pct_real") or 0.0)
+            if p > 0:
+                ttl_pos += 1
+            elif p < 0:
+                ttl_neg += 1
+            else:
+                ttl_zero += 1
+    except Exception:
+        pass
 
-    overall = {
-        "total": int(total),
-        "win": int(win),
-        "loss": int(loss),
-        "expired": int(expired),
-        "win_rate_pct": float(win_rate),
-        "pnl_avg_pct": float(_avg(pnl_list)) if pnl_list else 0.0,
-        "ttl_pos": int(ttl_pos),
-        "ttl_neg": int(ttl_neg),
-        "ttl_zero": int(ttl_zero),
-    } 
+overall = {
+    "total": int(total),
+    "win": int(win),
+    "loss": int(loss),
+    "expired": int(expired),
+    "win_rate_pct": float(win_rate),
+    "pnl_avg_pct": float(_avg(pnl_list)) if pnl_list else 0.0,
+
+    # ✅ novos contadores (para os cards do audit.html)
+    "ttl_pos": int(ttl_pos),
+    "ttl_neg": int(ttl_neg),
+    "ttl_zero": int(ttl_zero),
+}
 
       by_dow: Dict[str, Dict[str, Any]] = {}
     by_hour: Dict[str, Dict[str, Any]] = {}
