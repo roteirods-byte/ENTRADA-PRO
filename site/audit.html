@@ -47,6 +47,7 @@
       <div class="muted">
         Atualizado (BRT): <b id="updated">--</b>
         <span class="tag">Atualiza tela a cada 60s</span>
+        <span class="tag">Endpoint: <span id="ep">/api/audit/summary</span></span>
       </div>
       <div class="note">
         Objetivo: mostrar <b>onde o TOP10 está performando melhor</b> (por <b>dia</b>, <b>hora</b> e <b>dia+hora</b>).
@@ -56,9 +57,15 @@
 
     <div class="row">
       <div class="card">
-        <div class="k">TOTAL (FECHADAS)</div>
+        <div class="k">ABERTAS AGORA</div>
+        <div class="v" id="open_count">--</div>
+        <div class="muted">Quantidade em monitoramento</div>
+      </div>
+
+      <div class="card">
+        <div class="k">TOTAL FECHADAS</div>
         <div class="v" id="total">--</div>
-        <div class="muted">Base da estatística</div>
+        <div class="muted">Base da estatística (últimos fechados)</div>
       </div>
 
       <div class="card">
@@ -66,32 +73,26 @@
         <div class="v" id="pnl_avg">--</div>
         <div class="muted">Média do resultado real (pnl_pct_real)</div>
       </div>
-
-      <div class="card">
-        <div class="k">ABERTAS AGORA</div>
-        <div class="v" id="open_count">--</div>
-        <div class="muted">Quantidade em monitoramento</div>
-      </div>
     </div>
 
-    <!-- NOVOS 3 CARDS TTL -->
+    <!-- NOVO: 3 CARDS TTL -->
     <div class="row">
       <div class="card">
-        <div class="k">TTL + (FECHOU POSITIVO)</div>
+        <div class="k">TTL + (PNL &gt; 0)</div>
         <div class="v" id="ttl_pos">--</div>
-        <div class="muted">EXPIRED/TTL com pnl_pct_real &gt; 0</div>
+        <div class="muted">Expirou no TTL, mas fechou positivo</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL - (FECHOU NEGATIVO)</div>
+        <div class="k">TTL - (PNL &lt; 0)</div>
         <div class="v" id="ttl_neg">--</div>
-        <div class="muted">EXPIRED/TTL com pnl_pct_real &lt; 0</div>
+        <div class="muted">Expirou no TTL, mas fechou negativo</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL 0 (ZERO)</div>
+        <div class="k">TTL 0 (PNL = 0)</div>
         <div class="v" id="ttl_zero">--</div>
-        <div class="muted">EXPIRED/TTL com pnl_pct_real = 0</div>
+        <div class="muted">Expirou no TTL, fechou zerado</div>
       </div>
     </div>
 
@@ -100,27 +101,27 @@
         <div class="k">TOP 5 MELHORES JANELAS (DIA + HORA)</div>
         <table>
           <thead>
-            <tr><th>Dia</th><th>Hora</th><th>Amostra</th><th>PNL médio %</th></tr>
+            <tr><th>Dia</th><th>Hora</th><th>N</th><th>PNL médio %</th></tr>
           </thead>
           <tbody id="best"></tbody>
         </table>
-        <div class="note">Regra simples: quanto maior a <b>Amostra</b> e o <b>PNL médio</b>, melhor.</div>
+        <div class="note">Regra simples: quanto maior o <b>N</b> e o <b>PNL médio</b>, melhor.</div>
       </div>
     </div>
 
     <div class="row">
       <div class="card">
-        <div class="k">MELHORES DIAS (DIA DA SEMANA)</div>
+        <div class="k">POR DIA DA SEMANA</div>
         <table>
-          <thead><tr><th>Dia</th><th>Amostra</th><th>PNL médio %</th></tr></thead>
+          <thead><tr><th>Dia</th><th>N</th><th>PNL médio %</th></tr></thead>
           <tbody id="by_dow"></tbody>
         </table>
       </div>
 
       <div class="card">
-        <div class="k">MELHORES HORÁRIOS (HORA BRT)</div>
+        <div class="k">POR HORA (BRT)</div>
         <table>
-          <thead><tr><th>Hora</th><th>Amostra</th><th>PNL médio %</th></tr></thead>
+          <thead><tr><th>Hora</th><th>N</th><th>PNL médio %</th></tr></thead>
           <tbody id="by_hour"></tbody>
         </table>
       </div>
@@ -158,6 +159,10 @@
   function safe(v, fallback="--"){
     return (v === null || v === undefined || v === "") ? fallback : String(v);
   }
+  function safeInt(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? String(Math.trunc(n)) : "0";
+  }
 
   async function load(){
     let j;
@@ -177,18 +182,18 @@
     document.getElementById("pnl_avg").innerHTML =
       `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
 
-    // NOVOS TTL CARDS
-    document.getElementById("ttl_pos").textContent = safe(overall.ttl_pos, "0");
-    document.getElementById("ttl_neg").textContent = safe(overall.ttl_neg, "0");
-    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero, "0");
+    // TTL cards
+    document.getElementById("ttl_pos").textContent = safeInt(overall.ttl_pos);
+    document.getElementById("ttl_neg").textContent = safeInt(overall.ttl_neg);
+    document.getElementById("ttl_zero").textContent = safeInt(overall.ttl_zero);
 
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
     document.getElementById("best").innerHTML =
-      (best.length ? best.map(x => `
+      (best.length ? best.slice(0,5).map(x => `
         <tr>
           <td>${safe(x.dow, "-")}</td>
-          <td>${safe(x.hour, "-")}:00</td>
+          <td>${safe(x.hour, "-")}</td>
           <td>${safe(x.n, "-")}</td>
           <td class="${clsPNL(x.pnl_avg_pct)}">${fmt3(x.pnl_avg_pct)}</td>
         </tr>
