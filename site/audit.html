@@ -54,6 +54,7 @@
       </div>
     </div>
 
+    <!-- LINHA 1: MÉTRICAS PRINCIPAIS -->
     <div class="row">
       <div class="card">
         <div class="k">TOTAL (FECHADAS)</div>
@@ -74,24 +75,24 @@
       </div>
     </div>
 
-    <!-- ✅ NOVOS CARDS: TTL POS / TTL NEG / TTL ZERO -->
+    <!-- LINHA 2: CONTADORES TTL -->
     <div class="row">
       <div class="card">
-        <div class="k">TTL POS (EXPIRED com PNL &gt; 0)</div>
+        <div class="k">TTL POSITIVO (EXPIRED)</div>
         <div class="v good" id="ttl_pos">--</div>
-        <div class="muted">TTL fechado no lucro</div>
+        <div class="muted">TTL com pnl_pct_real &gt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL NEG (EXPIRED com PNL &lt; 0)</div>
+        <div class="k">TTL NEGATIVO (EXPIRED)</div>
         <div class="v bad" id="ttl_neg">--</div>
-        <div class="muted">TTL fechado no prejuízo</div>
+        <div class="muted">TTL com pnl_pct_real &lt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL ZERO (EXPIRED com PNL = 0)</div>
+        <div class="k">TTL ZERO (EXPIRED)</div>
         <div class="v" id="ttl_zero">--</div>
-        <div class="muted">TTL fechou zerado</div>
+        <div class="muted">TTL com pnl_pct_real = 0</div>
       </div>
     </div>
 
@@ -177,15 +178,15 @@
     document.getElementById("pnl_avg").innerHTML =
       `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
 
-    // ✅ NOVO: TTL counters (se vier null, vai aparecer "--")
-    document.getElementById("ttl_pos").textContent = safe(overall.ttl_pos);
-    document.getElementById("ttl_neg").textContent = safe(overall.ttl_neg);
-    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero);
+    // TTL contadores (EXPIRED por TTL)
+    document.getElementById("ttl_pos").textContent  = safe(overall.ttl_pos,  "0");
+    document.getElementById("ttl_neg").textContent  = safe(overall.ttl_neg,  "0");
+    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero, "0");
 
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
     document.getElementById("best").innerHTML =
-      (best.length ? best.map(x => `
+      (best.length ? best.slice(0,5).map(x => `
         <tr>
           <td>${safe(x.dow, "-")}</td>
           <td>${safe(x.hour, "-")}:00</td>
@@ -235,7 +236,7 @@
   }
 
   load();
-  setInterval(load, 60_000); // só a tela atualiza (não pesa)
+  setInterval(load, 60_000);
 </script>
 </body>
 </html>
