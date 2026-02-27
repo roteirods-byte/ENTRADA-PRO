@@ -256,6 +256,22 @@ def build_signal(
     target_dist = abs(alvo - atual)
     assert_pct = float(mfe_mae_assert(o4, side_candidate, target_dist, atr_val, lookahead=12)) if o4 else 0.0
 
+    # aplica filtros mínimos (segurança): só LONG/SHORT quando passa nos mínimos
+    passes = (float(ganho_pct) >= float(gain_min_pct)) and (float(assert_pct) >= float(assert_min_pct))
+    if not passes:
+        return Signal(
+            par=par,
+            side="NÃO ENTRAR",
+            atual=atual,
+            alvo=alvo,
+            ganho_pct=float(ganho_pct),
+            assert_pct=float(assert_pct),
+            prazo="-",
+            zona="",
+            risco="",
+            prioridade="",
+        )
+
     # ZONA/RISCO/PRIORIDADE NÃO EXISTEM MAIS -> vazio
     zona = ""
     risco = ""

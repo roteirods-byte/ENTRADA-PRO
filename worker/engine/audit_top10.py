@@ -15,6 +15,7 @@ Arquivos gerados:
 
 import json
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,6 +63,35 @@ def _read_json(path: Path, default: Any) -> Any:
     except Exception:
         return default
 
+
+def _tail_jsonl(path: Path, n: int) -> List[Dict[str, Any]]:
+    try:
+        if not path.exists():
+            return []
+        # lê últimas linhas sem carregar tudo
+        with path.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            block = 8192
+            data = b""
+            pos = size
+            while pos > 0 and data.count(b"\n") <= n + 5:
+                pos = max(0, pos - block)
+                f.seek(pos)
+                data = f.read(size - pos) + data
+                size = pos
+        lines = [x for x in data.decode("utf-8", errors="ignore").splitlines() if x.strip()]
+        tail = lines[-n:] if n > 0 else lines
+        out = []
+        import json
+        for ln in tail:
+            try:
+                out.append(json.loads(ln))
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
 
 def _append_jsonl(path: Path, obj: Dict[str, Any]) -> None:
     line = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
@@ -277,15 +307,15 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
     # grava open
     atomic_write_json(open_path, new_open)
 
-      # ---------- RESUMO ----------
-    # Lê o histórico real (jsonl) para não zerar quando este ciclo não fechou nada.
-    def _read_last_closed_jsonl(path: Path, limit: int) -> List[Dict[str, Any]]:
+    # ---------- RESUMO ----------
+    # OBS: o painel NÃO zera. last_closed vem do histórico (top10_closed.jsonl).
+    def _tail_jsonl(path: Path, n: int) -> list[dict]:
         try:
             if not path.exists():
                 return []
             lines = path.read_text(encoding="utf-8").splitlines()
-            lines = lines[-limit:] if limit > 0 else lines
-            out: List[Dict[str, Any]] = []
+            lines = lines[-max(0, int(n)):] if n else lines
+            out = []
             for ln in lines:
                 ln = (ln or "").strip()
                 if not ln:
@@ -293,56 +323,49 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
                 try:
                     out.append(json.loads(ln))
                 except Exception:
-                    continue
+                    pass
             return out
         except Exception:
             return []
 
-    last_closed = _read_last_closed_jsonl(closed_path, max_last_closed)
+    last_closed = _tail_jsonl(closed_path, max_last_closed)
 
-    # Contagem por resultado (histórico)
+    # contadores e médias baseados no MESMO recorte (last_closed)
+    total = len(last_closed)
     win = sum(1 for x in last_closed if str(x.get("result")) == "WIN")
     loss = sum(1 for x in last_closed if str(x.get("result")) == "LOSS")
     expired = sum(1 for x in last_closed if str(x.get("result")) == "EXPIRED")
-    total = win + loss + expired
     win_rate = (win / total * 100.0) if total > 0 else 0.0
 
-    def _avg(nums: List[float]) -> float:
-        nums = [float(x) for x in nums if x is not None]
-        return sum(nums) / len(nums) if nums else 0.0
+    pnl_list = []
+    ttl_pos = ttl_neg = ttl_zero = 0
+    for x in last_closed:
+        pnl = float(x.get("pnl_pct_real") or 0.0)
+        pnl_list.append(pnl)
 
-pnl_list = [float(x.get("pnl_pct_real") or 0.0) for x in last_closed]
-
-# contadores de EXPIRED por TTL (lucro / prejuízo / zero)
-ttl_pos = ttl_neg = ttl_zero = 0
-for x in last_closed:
-    try:
         if str(x.get("result")) == "EXPIRED" and str(x.get("hit")) == "TTL":
-            p = float(x.get("pnl_pct_real") or 0.0)
-            if p > 0:
+            if pnl > 0:
                 ttl_pos += 1
-            elif p < 0:
+            elif pnl < 0:
                 ttl_neg += 1
             else:
                 ttl_zero += 1
-    except Exception:
-        pass
 
-overall = {
-    "total": int(total),
-    "win": int(win),
-    "loss": int(loss),
-    "expired": int(expired),
-    "win_rate_pct": float(win_rate),
-    "pnl_avg_pct": float(_avg(pnl_list)) if pnl_list else 0.0,
+    pnl_avg = (sum(pnl_list)/len(pnl_list)) if pnl_list else 0.0
 
-    # ✅ novos contadores (para os cards do audit.html)
-    "ttl_pos": int(ttl_pos),
-    "ttl_neg": int(ttl_neg),
-    "ttl_zero": int(ttl_zero),
-}
+    overall = {
+        "total": int(total),
+        "win": int(win),
+        "loss": int(loss),
+        "expired": int(expired),
+        "win_rate_pct": float(win_rate),
+        "pnl_avg_pct": float(pnl_avg),
+        "ttl_pos": int(ttl_pos),
+        "ttl_neg": int(ttl_neg),
+        "ttl_zero": int(ttl_zero),
+    }
 
-      by_dow: Dict[str, Dict[str, Any]] = {}
+    by_dow: Dict[str, Dict[str, Any]] = {}
     by_hour: Dict[str, Dict[str, Any]] = {}
     combo: Dict[str, Dict[str, Any]] = {}
 
@@ -427,4 +450,5 @@ overall = {
     }
 
     atomic_write_json(summary_path, summary)
+
     return summary
