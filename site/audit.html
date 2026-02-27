@@ -54,7 +54,7 @@
       </div>
     </div>
 
-    <!-- LINHA 1: MÉTRICAS PRINCIPAIS -->
+    <!-- LINHA 1 (3 cards principais) -->
     <div class="row">
       <div class="card">
         <div class="k">TOTAL (FECHADAS)</div>
@@ -75,24 +75,24 @@
       </div>
     </div>
 
-    <!-- LINHA 2: CONTADORES TTL -->
+    <!-- LINHA 2 (3 cards TTL) -->
     <div class="row">
       <div class="card">
-        <div class="k">TTL POSITIVO (EXPIRED)</div>
-        <div class="v good" id="ttl_pos">--</div>
-        <div class="muted">TTL com pnl_pct_real &gt; 0</div>
+        <div class="k">TTL + (EXPIRED COM LUCRO)</div>
+        <div class="v" id="ttl_pos">--</div>
+        <div class="muted">Expired (TTL) com pnl_pct_real &gt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL NEGATIVO (EXPIRED)</div>
-        <div class="v bad" id="ttl_neg">--</div>
-        <div class="muted">TTL com pnl_pct_real &lt; 0</div>
+        <div class="k">TTL - (EXPIRED COM PREJUÍZO)</div>
+        <div class="v" id="ttl_neg">--</div>
+        <div class="muted">Expired (TTL) com pnl_pct_real &lt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL ZERO (EXPIRED)</div>
+        <div class="k">TTL 0 (EXPIRED NEUTRO)</div>
         <div class="v" id="ttl_zero">--</div>
-        <div class="muted">TTL com pnl_pct_real = 0</div>
+        <div class="muted">Expired (TTL) com pnl_pct_real = 0</div>
       </div>
     </div>
 
@@ -178,15 +178,15 @@
     document.getElementById("pnl_avg").innerHTML =
       `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
 
-    // TTL contadores (EXPIRED por TTL)
-    document.getElementById("ttl_pos").textContent  = safe(overall.ttl_pos,  "0");
-    document.getElementById("ttl_neg").textContent  = safe(overall.ttl_neg,  "0");
-    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero, "0");
+    // TTL cards
+    document.getElementById("ttl_pos").textContent = safe(overall.ttl_pos);
+    document.getElementById("ttl_neg").textContent = safe(overall.ttl_neg);
+    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero);
 
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
     document.getElementById("best").innerHTML =
-      (best.length ? best.slice(0,5).map(x => `
+      (best.length ? best.map(x => `
         <tr>
           <td>${safe(x.dow, "-")}</td>
           <td>${safe(x.hour, "-")}:00</td>
