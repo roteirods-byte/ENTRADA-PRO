@@ -47,7 +47,6 @@
       <div class="muted">
         Atualizado (BRT): <b id="updated">--</b>
         <span class="tag">Atualiza tela a cada 60s</span>
-        <span class="tag">Endpoint: <span id="endpoint_txt">/api/audit/summary</span></span>
       </div>
       <div class="note">
         Objetivo: mostrar <b>onde o TOP10 está performando melhor</b> (por <b>dia</b>, <b>hora</b> e <b>dia+hora</b>).
@@ -55,7 +54,6 @@
       </div>
     </div>
 
-    <!-- Cards principais -->
     <div class="row">
       <div class="card">
         <div class="k">TOTAL (FECHADAS)</div>
@@ -76,24 +74,24 @@
       </div>
     </div>
 
-    <!-- NOVO: Cards TTL -->
+    <!-- NOVOS 3 CARDS TTL -->
     <div class="row">
       <div class="card">
-        <div class="k">TTL + (EXPIRADAS POSITIVAS)</div>
+        <div class="k">TTL + (FECHOU POSITIVO)</div>
         <div class="v" id="ttl_pos">--</div>
-        <div class="muted">Entre as TTL, quantas fecharam com PNL &gt; 0</div>
+        <div class="muted">EXPIRED/TTL com pnl_pct_real &gt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL - (EXPIRADAS NEGATIVAS)</div>
+        <div class="k">TTL - (FECHOU NEGATIVO)</div>
         <div class="v" id="ttl_neg">--</div>
-        <div class="muted">Entre as TTL, quantas fecharam com PNL &lt; 0</div>
+        <div class="muted">EXPIRED/TTL com pnl_pct_real &lt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL 0 (EXPIRADAS NEUTRAS)</div>
+        <div class="k">TTL 0 (ZERO)</div>
         <div class="v" id="ttl_zero">--</div>
-        <div class="muted">Entre as TTL, quantas fecharam com PNL = 0</div>
+        <div class="muted">EXPIRED/TTL com pnl_pct_real = 0</div>
       </div>
     </div>
 
@@ -147,7 +145,6 @@
 
 <script>
   const endpoint = "/api/audit/summary";
-  document.getElementById("endpoint_txt").textContent = endpoint;
 
   function fmt3(n){
     if (n === null || n === undefined || isNaN(n)) return "--";
@@ -160,10 +157,6 @@
   }
   function safe(v, fallback="--"){
     return (v === null || v === undefined || v === "") ? fallback : String(v);
-  }
-  function fmtInt(n){
-    if (n === null || n === undefined || isNaN(n)) return "--";
-    return String(parseInt(Number(n), 10));
   }
 
   async function load(){
@@ -184,12 +177,10 @@
     document.getElementById("pnl_avg").innerHTML =
       `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
 
-    // NOVO: TTL cards
-    document.getElementById("ttl_pos").innerHTML =
-      `<span class="good">${fmtInt(overall.ttl_pos)}</span>`;
-    document.getElementById("ttl_neg").innerHTML =
-      `<span class="bad">${fmtInt(overall.ttl_neg)}</span>`;
-    document.getElementById("ttl_zero").textContent = fmtInt(overall.ttl_zero);
+    // NOVOS TTL CARDS
+    document.getElementById("ttl_pos").textContent = safe(overall.ttl_pos, "0");
+    document.getElementById("ttl_neg").textContent = safe(overall.ttl_neg, "0");
+    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero, "0");
 
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
