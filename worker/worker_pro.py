@@ -214,6 +214,7 @@ def build_payload() -> Dict:
         "ok": True,
         "source": "local",
         "updated_at": dt_brt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+          "updated_at_brt": dt_brt.strftime("%Y-%m-%d %H:%M"),
         "now_brt": dt_brt.strftime("%Y-%m-%d %H:%M"),
         "gain_min_pct": float(gain_min),
         "assert_min_pct": float(assert_min),

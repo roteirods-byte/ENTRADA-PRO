@@ -15,6 +15,7 @@ Arquivos gerados:
 
 import json
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,6 +63,35 @@ def _read_json(path: Path, default: Any) -> Any:
     except Exception:
         return default
 
+
+def _tail_jsonl(path: Path, n: int) -> List[Dict[str, Any]]:
+    try:
+        if not path.exists():
+            return []
+        # lê últimas linhas sem carregar tudo
+        with path.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            block = 8192
+            data = b""
+            pos = size
+            while pos > 0 and data.count(b"\n") <= n + 5:
+                pos = max(0, pos - block)
+                f.seek(pos)
+                data = f.read(size - pos) + data
+                size = pos
+        lines = [x for x in data.decode("utf-8", errors="ignore").splitlines() if x.strip()]
+        tail = lines[-n:] if n > 0 else lines
+        out = []
+        import json
+        for ln in tail:
+            try:
+                out.append(json.loads(ln))
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
 
 def _append_jsonl(path: Path, obj: Dict[str, Any]) -> None:
     line = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
@@ -278,21 +308,130 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
     atomic_write_json(open_path, new_open)
 
     # ---------- RESUMO ----------
-    total = win + loss + expired
+    # OBS: o painel NÃO zera. last_closed vem do histórico (top10_closed.jsonl).
+    def _tail_jsonl(path: Path, n: int) -> list[dict]:
+        try:
+            if not path.exists():
+                return []
+            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = lines[-max(0, int(n)):] if n else lines
+            out = []
+            for ln in lines:
+                ln = (ln or "").strip()
+                if not ln:
+                    continue
+                try:
+                    out.append(json.loads(ln))
+                except Exception:
+                    pass
+            return out
+        except Exception:
+            return []
+
+    last_closed = _tail_jsonl(closed_path, max_last_closed)
+
+    # contadores e médias baseados no MESMO recorte (last_closed)
+    total = len(last_closed)
+    win = sum(1 for x in last_closed if str(x.get("result")) == "WIN")
+    loss = sum(1 for x in last_closed if str(x.get("result")) == "LOSS")
+    expired = sum(1 for x in last_closed if str(x.get("result")) == "EXPIRED")
     win_rate = (win / total * 100.0) if total > 0 else 0.0
 
-    last_closed = closed_cycle[-max_last_closed:]
+    pnl_list = []
+    ttl_pos = ttl_neg = ttl_zero = 0
+    for x in last_closed:
+        pnl = float(x.get("pnl_pct_real") or 0.0)
+        pnl_list.append(pnl)
+
+        if str(x.get("result")) == "EXPIRED" and str(x.get("hit")) == "TTL":
+            if pnl > 0:
+                ttl_pos += 1
+            elif pnl < 0:
+                ttl_neg += 1
+            else:
+                ttl_zero += 1
+
+    pnl_avg = (sum(pnl_list)/len(pnl_list)) if pnl_list else 0.0
+
+    overall = {
+        "total": int(total),
+        "win": int(win),
+        "loss": int(loss),
+        "expired": int(expired),
+        "win_rate_pct": float(win_rate),
+        "pnl_avg_pct": float(pnl_avg),
+        "ttl_pos": int(ttl_pos),
+        "ttl_neg": int(ttl_neg),
+        "ttl_zero": int(ttl_zero),
+    }
+
+    by_dow: Dict[str, Dict[str, Any]] = {}
+    by_hour: Dict[str, Dict[str, Any]] = {}
+    combo: Dict[str, Dict[str, Any]] = {}
+
+    dow_map = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"]
+
+    for x in last_closed:
+        ts = str(x.get("ts_brt") or "")
+        dow = "-"
+        hour = "-"
+        try:
+            dt = datetime.strptime(ts, "%Y-%m-%d %H:%M").replace(tzinfo=TZ_BRT)
+            dow = dow_map[dt.weekday()]
+            hour = f"{dt.hour:02d}"
+        except Exception:
+            pass
+
+        pnl = float(x.get("pnl_pct_real") or 0.0)
+
+        by_dow.setdefault(dow, {"n": 0, "pnl_sum": 0.0})
+        by_dow[dow]["n"] += 1
+        by_dow[dow]["pnl_sum"] += pnl
+
+        by_hour.setdefault(hour, {"n": 0, "pnl_sum": 0.0})
+        by_hour[hour]["n"] += 1
+        by_hour[hour]["pnl_sum"] += pnl
+
+        key = f"{dow}|{hour}"
+        combo.setdefault(key, {"dow": dow, "hour": hour, "n": 0, "pnl_sum": 0.0})
+        combo[key]["n"] += 1
+        combo[key]["pnl_sum"] += pnl
+
+    by_dow_out = {k: {"n": v["n"], "pnl_avg_pct": (v["pnl_sum"]/v["n"]) if v["n"] else 0.0} for k, v in by_dow.items()}
+    by_hour_out = {k: {"n": v["n"], "pnl_avg_pct": (v["pnl_sum"]/v["n"]) if v["n"] else 0.0} for k, v in by_hour.items()}
+
+    best_windows = sorted(
+        [
+            {
+                "dow": v["dow"],
+                "hour": v["hour"],
+                "n": v["n"],
+                "pnl_avg_pct": (v["pnl_sum"]/v["n"]) if v["n"] else 0.0,
+            }
+            for v in combo.values()
+        ],
+        key=lambda r: (r["pnl_avg_pct"], r["n"]),
+        reverse=True
+    )[:8]
 
     summary = {
         "ok": True,
         "updated_at_brt": _now_brt().strftime("%Y-%m-%d %H:%M"),
         "open_count": len(new_open),
+
+        # schema esperado pelo audit.html
+        "overall": overall,
+        "by_dow": by_dow_out,
+        "by_hour": by_hour_out,
+        "best_windows": best_windows,
+
+        # mantém compatibilidade
         "closed_cycle": {
-            "total": total,
-            "win": win,
-            "loss": loss,
-            "expired": expired,
-            "win_rate_pct": win_rate,
+            "total": int(total),
+            "win": int(win),
+            "loss": int(loss),
+            "expired": int(expired),
+            "win_rate_pct": float(win_rate),
         },
         "last_closed": [
             {
@@ -311,4 +450,5 @@ def run_audit_top10(*, data_dir: str, api_source: str = "BYBIT", max_last_closed
     }
 
     atomic_write_json(summary_path, summary)
+
     return summary
