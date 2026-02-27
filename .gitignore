@@ -33,3 +33,6 @@ data/audit/*.jsonl
 site.bkp_*/
 site_assets.bkp_*/
 api/health.log
+
+# lixo acidental
+worker/=
