@@ -50,7 +50,8 @@
       </div>
       <div class="note">
         Objetivo: mostrar <b>onde o TOP10 está performando melhor</b> (por <b>dia</b>, <b>hora</b> e <b>dia+hora</b>).
-        <br/>TTL: quando fecha por prazo. <b>TTL +</b> = fechou em lucro; <b>TTL -</b> = fechou no prejuízo; <b>TTL 0</b> = zerado.
+        <br>
+        Novidade: <b>TTL + / TTL - / TTL 0</b> mostram quantos fechamentos por <b>TTL</b> terminaram <b>positivos</b>, <b>negativos</b> ou <b>zerados</b>.
       </div>
     </div>
 
@@ -74,24 +75,24 @@
       </div>
     </div>
 
-    <!-- NOVO: 3 CARDS TTL -->
+    <!-- NOVOS CARDS TTL -->
     <div class="row">
       <div class="card">
-        <div class="k">TTL + (LUCRO)</div>
+        <div class="k">TTL + (POSITIVAS)</div>
         <div class="v good" id="ttl_pos">--</div>
-        <div class="muted">Qtd TTL com pnl_pct_real &gt; 0</div>
+        <div class="muted">Fechou por TTL com PNL &gt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL - (PREJUÍZO)</div>
+        <div class="k">TTL - (NEGATIVAS)</div>
         <div class="v bad" id="ttl_neg">--</div>
-        <div class="muted">Qtd TTL com pnl_pct_real &lt; 0</div>
+        <div class="muted">Fechou por TTL com PNL &lt; 0</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL 0 (ZERADO)</div>
+        <div class="k">TTL 0 (ZERADAS)</div>
         <div class="v" id="ttl_zero">--</div>
-        <div class="muted">Qtd TTL com pnl_pct_real = 0</div>
+        <div class="muted">Fechou por TTL com PNL = 0</div>
       </div>
     </div>
 
@@ -158,6 +159,11 @@
   function safe(v, fallback="--"){
     return (v === null || v === undefined || v === "") ? fallback : String(v);
   }
+  function safeInt(v){
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "--";
+    return String(Math.trunc(n));
+  }
 
   async function load(){
     let j;
@@ -170,17 +176,17 @@
     }
 
     document.getElementById("updated").textContent = safe(j.updated_at_brt);
-    document.getElementById("open_count").textContent = safe(j.open_count);
+    document.getElementById("open_count").textContent = safeInt(j.open_count);
 
     const overall = j.overall || {};
-    document.getElementById("total").textContent = safe(overall.total);
+    document.getElementById("total").textContent = safeInt(overall.total);
     document.getElementById("pnl_avg").innerHTML =
       `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
 
-    // NOVO: TTL cards
-    document.getElementById("ttl_pos").textContent = safe(overall.ttl_pos, "0");
-    document.getElementById("ttl_neg").textContent = safe(overall.ttl_neg, "0");
-    document.getElementById("ttl_zero").textContent = safe(overall.ttl_zero, "0");
+    // TTL cards
+    document.getElementById("ttl_pos").textContent = safeInt(overall.ttl_pos);
+    document.getElementById("ttl_neg").textContent = safeInt(overall.ttl_neg);
+    document.getElementById("ttl_zero").textContent = safeInt(overall.ttl_zero);
 
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
@@ -189,7 +195,7 @@
         <tr>
           <td>${safe(x.dow, "-")}</td>
           <td>${safe(x.hour, "-")}:00</td>
-          <td>${safe(x.n, "-")}</td>
+          <td>${safeInt(x.n)}</td>
           <td class="${clsPNL(x.pnl_avg_pct)}">${fmt3(x.pnl_avg_pct)}</td>
         </tr>
       `).join("") : `<tr><td colspan="4" class="muted">Sem dados suficientes ainda.</td></tr>`);
@@ -201,7 +207,7 @@
       (dowKeys.length ? dowKeys.map(k => `
         <tr>
           <td>${k}</td>
-          <td>${safe(by_dow[k].n, "-")}</td>
+          <td>${safeInt(by_dow[k].n)}</td>
           <td class="${clsPNL(by_dow[k].pnl_avg_pct)}">${fmt3(by_dow[k].pnl_avg_pct)}</td>
         </tr>
       `).join("") : `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`);
@@ -213,7 +219,7 @@
       (hourKeys.length ? hourKeys.map(k => `
         <tr>
           <td>${k}:00</td>
-          <td>${safe(by_hour[k].n, "-")}</td>
+          <td>${safeInt(by_hour[k].n)}</td>
           <td class="${clsPNL(by_hour[k].pnl_avg_pct)}">${fmt3(by_hour[k].pnl_avg_pct)}</td>
         </tr>
       `).join("") : `<tr><td colspan="3" class="muted">Sem dados.</td></tr>`);
