@@ -50,11 +50,11 @@
       </div>
       <div class="note">
         Objetivo: mostrar <b>onde o TOP10 está performando melhor</b> (por <b>dia</b>, <b>hora</b> e <b>dia+hora</b>).
-        <br>
-        Novidade: <b>TTL + / TTL - / TTL 0</b> mostram quantos fechamentos por <b>TTL</b> terminaram <b>positivos</b>, <b>negativos</b> ou <b>zerados</b>.
+        Use isso para entender quais janelas estão mais favoráveis.
       </div>
     </div>
 
+    <!-- KPIs principais -->
     <div class="row">
       <div class="card">
         <div class="k">TOTAL (FECHADAS)</div>
@@ -75,24 +75,24 @@
       </div>
     </div>
 
-    <!-- NOVOS CARDS TTL -->
+    <!-- NOVO: TTL cards -->
     <div class="row">
       <div class="card">
-        <div class="k">TTL + (POSITIVAS)</div>
-        <div class="v good" id="ttl_pos">--</div>
-        <div class="muted">Fechou por TTL com PNL &gt; 0</div>
+        <div class="k">TTL + (EXPIRED COM PNL +)</div>
+        <div class="v" id="ttl_pos">--</div>
+        <div class="muted">Expirou no tempo e fechou positivo</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL - (NEGATIVAS)</div>
-        <div class="v bad" id="ttl_neg">--</div>
-        <div class="muted">Fechou por TTL com PNL &lt; 0</div>
+        <div class="k">TTL - (EXPIRED COM PNL -)</div>
+        <div class="v" id="ttl_neg">--</div>
+        <div class="muted">Expirou no tempo e fechou negativo</div>
       </div>
 
       <div class="card">
-        <div class="k">TTL 0 (ZERADAS)</div>
+        <div class="k">TTL 0 (EXPIRED COM PNL 0)</div>
         <div class="v" id="ttl_zero">--</div>
-        <div class="muted">Fechou por TTL com PNL = 0</div>
+        <div class="muted">Expirou no tempo e fechou zerado</div>
       </div>
     </div>
 
@@ -161,8 +161,7 @@
   }
   function safeInt(v){
     const n = Number(v);
-    if (!Number.isFinite(n)) return "--";
-    return String(Math.trunc(n));
+    return Number.isFinite(n) ? String(Math.trunc(n)) : "--";
   }
 
   async function load(){
@@ -183,7 +182,7 @@
     document.getElementById("pnl_avg").innerHTML =
       `<span class="${clsPNL(overall.pnl_avg_pct)}">${fmt3(overall.pnl_avg_pct)}</span>`;
 
-    // TTL cards
+    // TTL counters (novos)
     document.getElementById("ttl_pos").textContent = safeInt(overall.ttl_pos);
     document.getElementById("ttl_neg").textContent = safeInt(overall.ttl_neg);
     document.getElementById("ttl_zero").textContent = safeInt(overall.ttl_zero);
@@ -191,7 +190,7 @@
     // best_windows
     const best = Array.isArray(j.best_windows) ? j.best_windows : [];
     document.getElementById("best").innerHTML =
-      (best.length ? best.map(x => `
+      (best.length ? best.slice(0,5).map(x => `
         <tr>
           <td>${safe(x.dow, "-")}</td>
           <td>${safe(x.hour, "-")}:00</td>
