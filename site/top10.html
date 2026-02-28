@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="./assets/style.css?v=20260209a" />
 
   <style id="compact-force-v8">
-    /* 1) TAMANHO: + um pouco */
     th,td{
       padding:8px 13px!important;
       font-size:17px!important;
@@ -22,14 +21,6 @@
       margin-left:auto!important;
       margin-right:auto!important;
     }
-
-    /* 2) DEFINE “INÍCIO” = coluna PAR (mesmo alinhamento do painel) */
-    :root{ --par-left: 0px; }
-
-    /* alinha TÍTULO, ATUALIZAÇÃO e BLOCO “Significado das colunas” */
-    h1,h2,.title,.header,.topbar,.subheader,.updated,.lastUpdate,.ultima,.ultimaAtualizacao,.hint,.hintBox,.legend,.meaning{
-      margin-left: var(--par-left)!important;
-    }
   </style>
 </head>
 
@@ -40,13 +31,25 @@
   </header>
 
   <main id="app">
-    <h1 style="margin:12px 12px 8px;">TOP10 • ENTRADA PRO</h1>
+    <h1 style="margin:12px;">TOP10 • ENTRADA PRO</h1>
 
     <div id="badges" style="margin:0 12px 10px;opacity:.85"></div>
     <div id="status" style="margin:0 12px 10px;display:none"></div>
 
     <table id="tbl" style="margin:0 12px 18px;">
-      <thead></thead>
+      <thead>
+        <tr>
+          <th>PAR</th>
+          <th>SIDE</th>
+          <th>ATUAL</th>
+          <th>ALVO</th>
+          <th>GANHO %</th>
+          <th>ASSERT %</th>
+          <th>PRAZO</th>
+          <th>DATA</th>
+          <th>HORA</th>
+        </tr>
+      </thead>
       <tbody></tbody>
     </table>
   </main>
