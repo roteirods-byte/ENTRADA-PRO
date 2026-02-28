@@ -146,6 +146,7 @@
 
 <script>
   const endpoint = "/api/audit/summary";
+  const FETCH_TIMEOUT_MS = 3000;
 
   function fmt3(n){
     if (n === null || n === undefined || isNaN(n)) return "--";
@@ -167,10 +168,17 @@
   async function load(){
     let j;
     try{
-      const r = await fetch(endpoint + "?t=" + Date.now(), {cache:"no-store"});
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+      const r = await fetch(endpoint + "?t=" + Date.now(), {cache:"no-store", signal: ctrl.signal});
+      clearTimeout(t);
+      if (!r.ok) throw new Error(`HTTP_`);
       j = await r.json();
+      if (!j || typeof j !== "object") throw new Error("INVALID_JSON");
+      if (j.ok === false) throw new Error(j.error || "API_OFFLINE");
     }catch(e){
-      document.getElementById("updated").textContent = "ERRO (API)";
+      const prev = document.getElementById("updated").textContent || "--";
+      document.getElementById("updated").textContent = ` • API OFFLINE / SEM DADOS`;
       return;
     }
 
@@ -240,7 +248,8 @@
   }
 
   load();
-  setInterval(load, 60_000);
+  if (window.__auditTimer) clearInterval(window.__auditTimer);
+  window.__auditTimer = setInterval(load, 60_000);
 </script>
 </body>
 </html>
