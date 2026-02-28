@@ -1,4 +1,3 @@
-cat > /opt/ENTRADA-PRO/api/server.js <<'JS'
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
@@ -27,4 +26,3 @@ app.get("/api/health", (req,res)=> res.json({ok:true, service:"entrada-pro-api"}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=> console.log(`[API] listening ${PORT} DATA_DIR=${DATA_DIR}`));
-JS
