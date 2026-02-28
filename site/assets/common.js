@@ -58,6 +58,10 @@ function fmtPct(v) {
   if (!Number.isFinite(n)) return v == null ? '-' : String(v);
   return n.toFixed(2) + '%';
 }
+function escHtml(v) {
+  return String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
 
 function fmtText(v) {
   if (v === null || v === undefined) return '-';
@@ -242,7 +246,14 @@ const mem = {
 
 const CACHE_TTL_MS = 60_000;
 
+function assertValidKind(kind) {
+  if (!Object.prototype.hasOwnProperty.call(mem, kind)) {
+    throw new Error('INVALID_KIND');
+  }
+}
+
 async function load(kind) {
+  assertValidKind(kind);
   const slot = mem[kind];
   const age = Date.now() - slot.at;
   if (slot.data && age < CACHE_TTL_MS) return { ok: true, source: 'cache', raw: slot.data };
@@ -253,7 +264,6 @@ const urlList = (kind === 'top10')
 
 const json = await fetchWithFallback(urlList);
 
-// ✅ ADICIONE ISTO AQUI
 setLastUpdateBox(json);
 
 slot.at = Date.now();
@@ -321,7 +331,7 @@ function renderTable(kind, items) {
       else if (key === 'side') { text = fmtText(raw).toUpperCase().replace('NAO', 'NÃO'); cls = sideClass(raw); }
       else text = fmtText(raw);
 
-      return '<td class="' + cls + '">' + text + '</td>';
+      return '<td class="' + cls + '">' + escHtml(text) + '</td>';
     }).join('') + '</tr>';
   }).join('');
 
@@ -329,6 +339,7 @@ function renderTable(kind, items) {
 }
 
 async function boot(kind) {
+  assertValidKind(kind);
   try {
     setStatus('carregando...');
     const out = await load(kind);
